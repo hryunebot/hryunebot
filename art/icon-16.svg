@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <!-- антенна -->
+  <rect x="7.5" y="1.5" width="1" height="3" fill="#C74F7F"/>
+  <rect x="7" y="0.5" width="2" height="2" rx="1" fill="#C74F7F"/>
+  <!-- ушки (залитые) -->
+  <path d="M1.5 6.5 L2.5 2.5 L5.5 4.5 Z M14.5 6.5 L13.5 2.5 L10.5 4.5 Z" fill="#C74F7F"/>
+  <!-- голова -->
+  <rect x="1.5" y="4.5" width="13" height="10.5" rx="3" fill="none" stroke="#C74F7F" stroke-width="1.5"/>
+  <!-- пятачок залитый, ноздри белые -->
+  <rect x="4" y="8" width="8" height="5" rx="2" fill="#C74F7F"/>
+  <rect x="6" y="9.5" width="1" height="2" fill="#fff"/>
+  <rect x="9" y="9.5" width="1" height="2" fill="#fff"/>
+</svg>

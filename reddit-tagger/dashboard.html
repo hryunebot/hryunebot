@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Хрюнебот</title>
+<link rel="icon" href="icons/icon32.png">
+<style>
+  :root {
+    --bg: #f6f6f8; --card: #fff; --fg: #1c1c1e; --mut: #6b6b73; --line: #e3e3e8;
+    --field: #f1f1f4; --acc: #0090ff; --danger: #e5484d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #131417; --card: #1d1f23; --fg: #eceef1; --mut: #9a9ca5; --line: #2f3238; --field: #272a30; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+  h1 { font-size: 22px; margin: 0; }
+  .kpis { display: flex; gap: 18px; color: var(--mut); font-size: 13px; }
+  .kpis b { color: var(--fg); font-size: 16px; margin-right: 3px; }
+  nav { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+  nav button { background: none; border: none; color: var(--mut); font: 600 14px system-ui, sans-serif; padding: 9px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  nav button.on { color: var(--fg); border-color: var(--acc); }
+  /* телефон (1.3.84): вкладки прокручиваются вбок, кнопки крупнее под палец */
+  @media (max-width: 600px) {
+    .wrap { padding: 14px 10px 60px; }
+    /* вкладки — в несколько строк, без скрытой прокрутки вбок (иначе «Група» и «Налаштування» уезжают за край) */
+    nav { flex-wrap: wrap; row-gap: 2px; }
+    nav button { white-space: nowrap; padding: 10px 10px; }
+    /* счётчики в шапке переносятся — раньше они распирали страницу шире экрана */
+    .kpis { flex-wrap: wrap; gap: 6px 14px; }
+    .set { padding: 12px; }
+    .set select, .set input[type=number], .set input[type=text] { min-height: 36px; font-size: 16px; }
+    .set input[type=checkbox] { width: 20px; height: 20px; }
+  }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+  .bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  input, select, textarea { font: inherit; color: var(--fg); background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; outline: none; }
+  input:focus, select:focus, textarea:focus { border-color: var(--acc); }
+  .grow { flex: 1; min-width: 160px; }
+  button.btn { font: 600 13px system-ui, sans-serif; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--field); color: var(--fg); cursor: pointer; }
+  button.pri { background: var(--acc); border-color: var(--acc); color: #fff; }
+  button.dng { color: var(--danger); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; color: var(--mut); font-weight: 600; cursor: pointer; user-select: none; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  td.num { font-variant-numeric: tabular-nums; text-align: right; }
+  th.num { text-align: right; }
+  a { color: var(--acc); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .badge { display: inline-block; font: 600 11px/18px system-ui, sans-serif; padding: 0 8px; border-radius: 9px; margin: 0 3px 3px 0; white-space: nowrap; }
+  .chip { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 9px; background: var(--field); margin: 0 3px 3px 0; white-space: nowrap; }
+  .chip.click { cursor: pointer; }
+  .chip.click:hover { outline: 1px solid var(--mut); }
+  .mut { color: var(--mut); font-size: 12px; }
+  .note { max-width: 260px; white-space: pre-wrap; word-break: break-word; }
+  .acts { white-space: nowrap; text-align: right; }
+  .acts button { background: none; border: none; cursor: pointer; color: var(--mut); font-size: 15px; padding: 2px 5px; }
+  .acts button:hover { color: var(--fg); }
+  .empty { padding: 40px; text-align: center; color: var(--mut); }
+  .scroll { overflow-x: auto; }
+  .set { padding: 18px; display: grid; gap: 18px; max-width: 640px; }
+  .set label { display: grid; gap: 6px; font-weight: 600; }
+  .set .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .sw { display: inline-block; width: 22px; height: 22px; border-radius: 50%; cursor: pointer; margin-right: 6px; outline-offset: 2px; }
+  .sw.on { outline: 2px solid var(--fg); }
+  dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--card); color: var(--fg); padding: 20px; width: min(420px, calc(100vw - 32px)); }
+  dialog::backdrop { background: rgba(0,0,0,.4); }
+  dialog form { display: grid; gap: 12px; }
+  dialog h3 { margin: 0; }
+  .badge.out { background: transparent !important; color: var(--fg) !important; border: 1px solid var(--mut); line-height: 16px; }
+  .code { font: 600 20px ui-monospace, Consolas, monospace; letter-spacing: 2px; padding: 4px 10px; background: var(--field); border-radius: 8px; }
+  .err { color: var(--danger); }
+  h2 { font-size: 16px; margin: 22px 0 10px; }
+  #langSw { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  #langSw button { background: none; border: none; color: var(--mut); font: 600 12px system-ui, sans-serif; padding: 5px 10px; cursor: pointer; }
+  #langSw button.on { background: var(--acc); color: #fff; }
+  .bars { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--field); width: 120px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 style="display:flex;align-items:center;gap:10px"><img src="icons/icon48.png" width="40" height="40" alt="">Хрюнебот</h1>
+    <div class="kpis" id="kpis"></div>
+    <div id="langSw"><button data-lang="uk">UA</button><button data-lang="ru">RU</button></div>
+  </header>
+  <nav id="tabs">
+    <button data-tab="users" class="on" data-t="Юзеры">Юзеры</button>
+    <button data-tab="subs" data-t="Сабреддиты">Сабреддиты</button>
+    <button data-tab="tags" data-t="Метки">Метки</button>
+    <button data-tab="complaints" data-t="⚠ Жалобы">⚠ Жалобы</button>
+    <button data-tab="group" data-t="👥 Группа">👥 Группа</button>
+    <button data-tab="settings" data-t="Настройки">Настройки</button>
+  </nav>
+  <!-- вопрос о согласии на отправку в очередь владельцу: при установке и пока не ответили (1.3.85) -->
+  <div id="consentBox" class="card" style="display:none;padding:14px;margin-bottom:12px;border-color:var(--acc)"></div>
+  <div id="permBanner" class="card" style="display:none;padding:12px;margin-bottom:12px;border-color:var(--danger)"></div>
+  <main id="main"></main>
+</div>
+
+<dialog id="dlg">
+  <form method="dialog" id="dlgForm">
+    <h3 id="dlgTitle"></h3>
+    <input id="dlgName" placeholder="Ник (без u/)" data-tp="Ник (без u/)" required>
+    <input id="dlgTags" placeholder="Метки через запятую" data-tp="Метки через запятую">
+    <div id="dlgPresets"></div>
+    <div id="dlgColors"></div>
+    <textarea id="dlgNote" rows="3" placeholder="Заметка" data-tp="Заметка"></textarea>
+    <div class="row" style="display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn" value="cancel" formnovalidate data-t="Отмена">Отмена</button>
+      <button class="btn pri" value="ok" data-t="Сохранить">Сохранить</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="i18n.js"></script>
+<script src="score.js"></script>
+<script src="dashboard.js"></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+node_modules/
+.wrangler/
+.dev.vars
+*.log
+*.zip
+hryunebot-512.png
+admin-key.txt
+dist/
+
+server/public/download/files/
+server/public/download/index.html

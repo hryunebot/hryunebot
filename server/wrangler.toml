@@ -1,0 +1,13 @@
+name = "reddit-tagger"
+main = "src/index.js"
+compatibility_date = "2025-06-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "reddit-tagger"
+database_id = "4b60c548-dc5c-4241-9614-c51352fcf9f7"
+
+# Страница «завантажити» (11.11.2026): статические файлы из public/ отдаются раньше API (совпал путь — файл, нет — воркер).
+# public/download/files/ кладёт build-installer.ps1 (в git не идёт).
+[assets]
+directory = "./public"

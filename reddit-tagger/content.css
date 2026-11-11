@@ -1,0 +1,214 @@
+.rt-wrap {
+  display: inline-flex;
+  align-items: center;
+  /* не хватает места — переносим свои метки, а не ужимаем дату reddit */
+  flex-wrap: wrap;
+  min-width: 0;
+  flex-shrink: 1;
+  row-gap: 2px;
+  gap: 3px;
+  margin: 0 4px;
+  vertical-align: middle;
+  cursor: pointer;
+  line-height: 1;
+}
+.rt-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font: 600 11px/16px system-ui, -apple-system, "Segoe UI", sans-serif;
+  padding: 0 7px;
+  border-radius: 9px;
+  white-space: nowrap;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.rt-shared {
+  background: transparent;
+  color: inherit;
+  border: 1px solid currentColor;
+  opacity: 0.75;
+  line-height: 14px;
+}
+.rt-auto {
+  background: transparent;
+  color: inherit;
+  border: 1px dashed currentColor;
+  opacity: 0.8;
+  line-height: 14px;
+}
+/* Спорщик: спорил с орками — свой, поэтому зелёный */
+.rt-debater {
+  color: #46a758;
+  border: 1px solid #46a758;
+  opacity: 1;
+}
+/* Красная 🥊 → зелёная: поворот оттенка (~350° → ~120°) */
+.rt-glove {
+  display: inline-block;
+  filter: hue-rotate(130deg) saturate(1.2);
+}
+.rt-add {
+  font-size: 11px;
+  opacity: 0.25;
+  transition: opacity 0.15s;
+  filter: grayscale(1);
+}
+.rt-add:hover, .rt-noted { opacity: 0.9; filter: none; }
+
+.rt-pop {
+  --rt-bg: #ffffff;
+  --rt-fg: #1c1c1e;
+  --rt-mut: #6b6b73;
+  --rt-line: #e3e3e8;
+  --rt-field: #f4f4f6;
+  --rt-acc: #0090ff;
+  position: fixed;
+  z-index: 2147483647;
+  width: 290px;
+  box-sizing: border-box;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--rt-bg);
+  color: var(--rt-fg);
+  border: 1px solid var(--rt-line);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  text-align: left;
+}
+@media (prefers-color-scheme: dark) {
+  .rt-pop {
+    --rt-bg: #1d1f23;
+    --rt-fg: #eceef1;
+    --rt-mut: #9a9ca5;
+    --rt-line: #33363d;
+    --rt-field: #272a30;
+  }
+}
+.rt-pop * { box-sizing: border-box; }
+.rt-pop-h { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
+.rt-x { cursor: pointer; font-size: 20px; line-height: 1; color: var(--rt-mut); padding: 0 4px; }
+.rt-x:hover { color: var(--rt-fg); }
+.rt-cur { display: flex; flex-wrap: wrap; gap: 4px; min-height: 18px; }
+.rt-cur i { font-style: normal; cursor: pointer; opacity: 0.7; }
+.rt-cur i:hover { opacity: 1; }
+.rt-empty { color: var(--rt-mut); font-size: 12px; }
+.rt-pop .rt-in, .rt-pop .rt-note {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--rt-line);
+  background: var(--rt-field);
+  color: var(--rt-fg);
+  font: inherit;
+  outline: none;
+  resize: vertical;
+}
+.rt-pop .rt-in:focus, .rt-pop .rt-note:focus { border-color: var(--rt-acc); }
+.rt-presets { display: flex; flex-wrap: wrap; gap: 4px; max-height: 110px; overflow-y: auto; }
+.rt-chip {
+  cursor: pointer;
+  font-size: 12px;
+  padding: 1px 8px;
+  border-radius: 9px;
+  border: 1px dashed var(--rt-line);
+  color: var(--rt-mut);
+}
+.rt-chip:hover { color: var(--rt-fg); border-color: var(--rt-mut); }
+.rt-colors { display: flex; gap: 6px; }
+.rt-sw { width: 18px; height: 18px; border-radius: 50%; cursor: pointer; outline-offset: 2px; }
+.rt-sw.on { outline: 2px solid var(--rt-fg); }
+.rt-stats { font-size: 11px; color: var(--rt-mut); }
+.rt-comp { display: flex; flex-direction: column; gap: 5px; padding-top: 8px; border-top: 1px solid var(--rt-line); }
+.rt-meterbar { height: 6px; border-radius: 3px; background: var(--rt-field); overflow: hidden; }
+.rt-meterbar span { display: block; height: 100%; border-radius: 3px; }
+.rt-complain { color: #e5484d; }
+.rt-complain.rt-undo { color: var(--rt-mut); }
+.rt-actions { display: flex; justify-content: space-between; }
+.rt-btn {
+  font: 600 12px system-ui, sans-serif;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--rt-line);
+  background: var(--rt-field);
+  color: var(--rt-fg);
+  cursor: pointer;
+}
+.rt-save { background: var(--rt-acc); border-color: var(--rt-acc); color: #fff; }
+.rt-del { color: #e5484d; }
+
+/* Размер значков (настройка «Розмір значків»): s — как раньше, m — по умолчанию, l — крупно */
+html[data-rt-size="m"] .rt-badge { font-size: 13px; line-height: 19px; padding: 0 8px; border-radius: 10px; }
+html[data-rt-size="m"] .rt-auto, html[data-rt-size="m"] .rt-shared { line-height: 17px; }
+html[data-rt-size="m"] .rt-add { font-size: 13px; }
+html[data-rt-size="l"] .rt-badge { font-size: 15px; line-height: 22px; padding: 0 9px; border-radius: 12px; }
+html[data-rt-size="l"] .rt-auto, html[data-rt-size="l"] .rt-shared { line-height: 20px; }
+html[data-rt-size="l"] .rt-add { font-size: 15px; }
+
+/* Ссылка на историю юзера в rosint — в шапке окна метки */
+.rt-pop .rt-rosint { margin-left: auto; margin-right: 8px; font-size: 12px; color: var(--rt-acc); text-decoration: none; }
+.rt-pop .rt-rosint:hover { text-decoration: underline; }
+
+.rt-pop .rt-recheck { font-size: 12px; color: var(--rt-acc); text-decoration: none; }
+.rt-pop .rt-recheck:hover { text-decoration: underline; }
+
+/* Ручная оценка вердикта */
+.rt-pop .rt-review { font-size: 12px; display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.rt-pop .rt-rv { font: inherit; padding: 1px 6px; border-radius: 8px; border: 1px solid var(--rt-line); background: var(--rt-field); color: var(--rt-fg); cursor: pointer; }
+.rt-pop .rt-rv-on { border-color: var(--rt-acc); background: var(--rt-acc); color: #fff; }
+
+/* «свій» — давний и хорошо принятый в tj */
+/* зелёная текстовая плашка «свій» (1.3.83): одинаково читается на светлой и тёмной теме, размер — как у остальных меток */
+.rt-trust { background: #2f9e44 !important; color: #fff !important; border: 1px solid #2f9e44 !important; opacity: 1 !important; font-weight: 700; }
+/* плашка-логотип TJ — для ветеранов оригинального TJournal (ручная выдача, WISHLIST п.10); пока нигде не выводится */
+.rt-tjvet .rt-tj { height: 1.05em; width: 2.75em; display: block; }
+
+/* дата коммента reddit — всегда в одну строку (иначе при длинных метках «5h ago» ломается в столбик) */
+shreddit-comment faceplate-timeago, shreddit-comment time, shreddit-post faceplate-timeago, shreddit-post time { white-space: nowrap; }
+
+/* вопрос о согласии на отправку в очередь владельцу (1.3.80) */
+.rt-consent { position: fixed; right: 16px; bottom: 16px; z-index: 2147483000; max-width: 360px; padding: 12px 14px; border-radius: 12px;
+  background: #fff; color: #1c1c1c; box-shadow: 0 6px 24px rgba(0,0,0,.25); font: 600 14px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; }
+.rt-consent-why { margin-top: 6px; font-weight: 400; font-size: 12px; color: #555; }
+.rt-consent-row { display: flex; gap: 8px; margin-top: 10px; justify-content: flex-end; }
+.rt-consent-row button { font: 600 13px system-ui, sans-serif; padding: 5px 14px; border-radius: 8px; border: 1px solid #bbb; background: #f3f3f3; color: #1c1c1c; cursor: pointer; }
+.rt-consent-row .rt-consent-yes { background: #2f9e44; border-color: #2f9e44; color: #fff; }
+@media (prefers-color-scheme: dark) {
+  .rt-consent { background: #1a1d1f; color: #e8e8e8; }
+  .rt-consent-why { color: #aaa; }
+  .rt-consent-row button { background: #2a2d30; color: #e8e8e8; border-color: #444; }
+}
+
+/* ---------- телефон / сенсорный экран (1.3.84, Firefox Android) ----------
+   Наведения нет — подробности открываются нажатием на плашку (окно ника). Окно — по ширине экрана, с прокруткой;
+   кнопки и метки крупнее, чтобы попадать пальцем. На ПК (мышь) ничего не меняется. */
+@media (pointer: coarse) {
+  .rt-pop { width: min(340px, calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+  .rt-pop .rt-btn { min-height: 40px; padding: 8px 14px; font-size: 14px; }
+  .rt-pop .rt-chip { display: inline-flex; align-items: center; min-height: 32px; padding: 4px 10px; }
+  .rt-pop .rt-sw { width: 26px; height: 26px; }
+  .rt-pop .rt-x { font-size: 26px; padding: 4px 10px; }
+  .rt-pop .rt-rv { min-height: 34px; min-width: 40px; }
+  .rt-pop .rt-recheck, .rt-pop .rt-rosint { display: inline-block; padding: 6px 0; }
+  .rt-pop .rt-in, .rt-pop .rt-note { font-size: 16px; } /* 16px — чтобы телефон не увеличивал страницу при вводе */
+  .rt-wrap { row-gap: 3px; }
+  .rt-badge { cursor: pointer; }
+  .rt-consent { left: 8px; right: 8px; bottom: 8px; max-width: none; }
+  .rt-consent-row button { min-height: 40px; padding: 8px 18px; font-size: 15px; }
+}
+
+/* вопрос о согласии на reddit — узкая полоска в одну строку (1.3.85); полный текст по «Докладніше» */
+.rt-consent.rt-consent-mini { padding: 8px 10px; max-width: 520px; }
+.rt-consent-mini .rt-consent-row { margin-top: 0; align-items: center; justify-content: flex-start; flex-wrap: wrap; gap: 6px; }
+.rt-consent-mini .rt-consent-q { flex: 1 1 auto; font-size: 13px; }
+.rt-consent-mini .rt-consent-row button { padding: 4px 12px; }
+.rt-consent-mini .rt-consent-more { background: none !important; border: none !important; text-decoration: underline; padding: 4px 6px !important; color: inherit; opacity: .8; }
+.rt-consent-mini .rt-consent-why { margin-top: 6px; }
+@media (pointer: coarse) {
+  .rt-consent.rt-consent-mini { left: 8px; right: 8px; bottom: 8px; max-width: none; padding: 8px 10px; }
+  .rt-consent-mini .rt-consent-row button { min-height: 36px; padding: 6px 14px; font-size: 14px; }
+  .rt-consent-mini .rt-consent-q { flex-basis: 100%; }
+}

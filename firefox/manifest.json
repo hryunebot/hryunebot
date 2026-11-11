@@ -1,0 +1,73 @@
+{
+  "manifest_version": 3,
+  "name": "__MSG_extName__",
+  "short_name": "__MSG_extName__",
+  "version": "__VERSION__",
+  "description": "__MSG_extDesc__",
+  "default_locale": "uk",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "hryunebot@reddit-tagger-server.workers.dev",
+      "strict_min_version": "128.0",
+      "data_collection_permissions": {
+        "required": [
+          "websiteContent",
+          "websiteActivity"
+        ]
+      }
+    },
+    "gecko_android": {
+      "strict_min_version": "128.0"
+    }
+  },
+  "permissions": [
+    "storage",
+    "unlimitedStorage"
+  ],
+  "host_permissions": [
+    "*://*.reddit.com/*",
+    "https://*.workers.dev/*",
+    "https://arctic-shift.photon-reddit.com/*"
+  ],
+  "background": {
+    "scripts": [
+      "i18n.js",
+      "score.js",
+      "background.js"
+    ]
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "__MSG_actionTitle__",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
+  },
+  "options_ui": {
+    "page": "dashboard.html",
+    "open_in_tab": true
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.reddit.com/*"
+      ],
+      "js": [
+        "i18n.js",
+        "score.js",
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

@@ -1,0 +1,85 @@
+<!-- Шаблон страницы «завантажити». Готовую server/public/download/index.html собирает build-installer.ps1 (шаг 5):
+     подставляет {{VERSION}}, {{BUILT}}, {{SHA_*}} той же сборки, что и файлы. Править здесь, не в public. -->
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Хрюнебот — завантажити</title>
+<link rel="icon" href="icon.png">
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="download.css">
+</head>
+<body>
+<main>
+<header>
+  <img src="icon.png" alt="">
+  <div>
+    <h1>Хрюнебот</h1>
+    <div class="ver"><span data-l="uk">Версія</span><span data-l="ru">Версия</span> <b>{{VERSION}} · {{BUILT}}</b></div>
+  </div>
+  <div class="lang"><button id="bu" class="on">UA</button><button id="br">RU</button></div>
+</header>
+<p class="lead" data-l="uk">Розширення для Reddit: мітки біля ніків, скарги, нахрюкометр і перевірка історії користувача.</p>
+<p class="lead" data-l="ru">Расширение для Reddit: метки у ников, жалобы, нахрюкометр и проверка истории пользователя.</p>
+
+<section class="card">
+  <h2>Firefox <span data-l="uk">(комп’ютер і Android)</span><span data-l="ru">(компьютер и Android)</span></h2>
+  <p data-l="uk">Підписано Mozilla, ставиться назавжди.</p>
+  <p data-l="ru">Подписано Mozilla, ставится насовсем.</p>
+  <a class="btn" href="files/hryunebot-firefox.xpi"><span data-l="uk">Завантажити</span><span data-l="ru">Скачать</span> .xpi</a>
+  <ol data-l="uk">
+    <li><b>Комп’ютер:</b> відкрийте файл у Firefox → «Додати».</li>
+    <li><b>Android:</b> завантажте файл → Firefox → Налаштування → Про Firefox → 5 разів торкніться логотипа → назад → «Встановити розширення з файлу» → виберіть файл → «Додати».</li>
+  </ol>
+  <ol data-l="ru">
+    <li><b>Компьютер:</b> откройте файл в Firefox → «Добавить».</li>
+    <li><b>Android:</b> скачайте файл → Firefox → Настройки → О Firefox → 5 раз нажмите на логотип → назад → «Установить расширение из файла» → выберите файл → «Добавить».</li>
+  </ol>
+  <div class="meta">SHA-256: {{SHA_XPI}} · <a href="https://www.virustotal.com/gui/file/{{SHA_XPI}}" target="_blank" rel="noopener">VirusTotal</a></div>
+</section>
+<section class="card">
+  <h2>Windows</h2>
+  <p data-l="uk">Chrome, Edge, Brave, Opera, Vivaldi і Firefox. Без прав адміністратора й без інтернету.</p>
+  <p data-l="ru">Chrome, Edge, Brave, Opera, Vivaldi и Firefox. Без прав администратора и без интернета.</p>
+  <a class="btn" href="files/Hryunebot-Windows.zip" download><span data-l="uk">Завантажити</span><span data-l="ru">Скачать</span> .zip</a>
+  <ol data-l="uk">
+    <li>Правою кнопкою по архіву → «Видобути все».</li>
+    <li>Запустіть <code>INSTALL.cmd</code> і виберіть браузер — відкриється сторінка розширень.</li>
+    <li>«Режим розробника» → «Завантажити розпаковане» → папка, яку покаже скрипт.</li>
+  </ol>
+  <ol data-l="ru">
+    <li>Правой кнопкой по архиву → «Извлечь все».</li>
+    <li>Запустите <code>INSTALL.cmd</code> и выберите браузер — откроется страница расширений.</li>
+    <li>«Режим разработчика» → «Загрузить распакованное» → папка, которую покажет скрипт.</li>
+  </ol>
+  <div class="meta">SHA-256: {{SHA_ZIP}} · <a href="https://www.virustotal.com/gui/file/{{SHA_ZIP}}" target="_blank" rel="noopener">VirusTotal</a></div>
+</section>
+<section class="card">
+  <h2>Linux</h2>
+  <p data-l="uk">Chromium-браузери і родина Firefox, звичайні, Flatpak і Snap. Без root.</p>
+  <p data-l="ru">Chromium-браузеры и семейство Firefox, обычные, Flatpak и Snap. Без root.</p>
+  <a class="btn" href="files/hryunebot-linux.sh" download><span data-l="uk">Завантажити</span><span data-l="ru">Скачать</span> .sh</a>
+  <p class="note"><span data-l="uk">Запуск:</span><span data-l="ru">Запуск:</span> <code>sh hryunebot-linux.sh</code></p>
+  <div class="meta">SHA-256: {{SHA_SH}} · <a href="https://www.virustotal.com/gui/file/{{SHA_SH}}" target="_blank" rel="noopener">VirusTotal</a></div>
+</section>
+<section class="card">
+  <h2 data-l="uk">Що варто знати</h2>
+  <h2 data-l="ru">Что стоит знать</h2>
+  <ul data-l="uk">
+    <li>Chrome на Android розширень не підтримує — використовуйте Firefox. Яндекс Браузер не підтримується.</li>
+    <li>Розширення працює тільки на reddit.com і для перевірки історії звертається до reddit та архіву ArcticShift. На сервер Хрюнебота йдуть ніки, які ви бачите на сторінці, ваші скарги й мітки, а з вашої згоди — ніки для поповнення бази. IP-адреси не зберігаються.</li>
+    <li><b>Чому для Windows не .exe?</b> Був .exe-установник, але кілька антивірусів (6 із ~70 на VirusTotal) лаялися на нього за евристикою: «новий непідписаний файл, щось розпаковує й запускає браузер» — без назви жодного вірусу. Прибрати це можна тільки платним сертифікатом із документами. Тому тепер — звичайний архів і текстовий <code>INSTALL.cmd</code>: відкрийте його блокнотом і побачите все, що він робить (копіює папку й відкриває браузер).</li>
+    <li>Перевірити, що файл не підмінили: порівняйте SHA-256 нижче кожної кнопки або відкрийте його на VirusTotal.</li>
+  </ul>
+  <ul data-l="ru">
+    <li>Chrome на Android расширения не поддерживает — используйте Firefox. Яндекс Браузер не поддерживается.</li>
+    <li>Расширение работает только на reddit.com и для проверки истории обращается к reddit и архиву ArcticShift. На сервер Хрюнебота уходят ники, которые вы видите на странице, ваши жалобы и метки, а с вашего согласия — ники для пополнения базы. IP-адреса не хранятся.</li>
+    <li><b>Почему для Windows не .exe?</b> Был .exe-установщик, но несколько антивирусов (6 из ~70 на VirusTotal) ругались на него по эвристике: «новый неподписанный файл, что-то распаковывает и запускает браузер» — без названия какого-либо вируса. Убрать это можно только платным сертификатом с документами. Поэтому теперь — обычный архив и текстовый <code>INSTALL.cmd</code>: откройте его блокнотом и увидите всё, что он делает (копирует папку и открывает браузер).</li>
+    <li>Проверить, что файл не подменили: сравните SHA-256 под каждой кнопкой или откройте его на VirusTotal.</li>
+  </ul>
+</section>
+</main>
+<script src="download.js"></script>
+</body>
+</html>

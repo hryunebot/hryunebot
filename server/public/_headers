@@ -1,0 +1,7 @@
+# Заголовки для статики (Workers static assets). Страница «завантажити» отдаётся отсюда, а не кодом воркера.
+# CSP строгая: только свои js/css/картинки, без инлайна; внешние ссылки (VirusTotal) — обычные переходы, CSP их не режет.
+/download/*
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Cache-Control: no-cache
