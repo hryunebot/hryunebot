@@ -68,6 +68,8 @@ const cases4 = [
   ['150+/40− (79%) → нет', TT(150, 40), false],
   ['слабая метка: орк?', ctx.isWeakHit({ verdict: 'unclear' }), true],
   ['слабая метка: консерва?', ctx.isWeakHit({ kons: 'weak' }), true],
+  ['консерва у «свого» тоже прячется (1.3.90)', ctx.isWeakHit({ kons: 'full' }), true],
+  ['не слабая: мінусують', ctx.isWeakHit({ homeDown: {}, tag: 'минусуют' }), false],
   ['слабая метка: слежу', ctx.isWeakHit({ tag: 'слежу', verdict: 'own' }), true],
   ['не слабая: спорщик', ctx.isWeakHit({ tag: 'орк', verdict: 'debater' }), false],
   ['не слабая: орк', ctx.isWeakHit({ tag: 'орк', verdict: 'own' }), false],

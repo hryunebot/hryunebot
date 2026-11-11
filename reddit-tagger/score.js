@@ -365,6 +365,7 @@ function ruleCount(r, subs, votes, subsP, votesP) {
   for (var j = 0; j < r.subs.length; j++) {
     var s = r.subs[j], all = (subs || {})[s] || 0, p = (subsP || {})[s] || 0;
     o.posts += p; o.comments += Math.max(0, all - p);
+    if (all) { o.bySub = o.bySub || {}; o.bySub[s] = all; } // разбивка по сабам — только числа (1.3.90, окно ника)
     o.n += all + (POST_W - 1) * p;
     var v = (votes || {})[s], vp = (votesP || {})[s];
     if (v) { o.up += v.up || 0; o.down += v.down || 0; o.upW += v.up || 0; o.downW += v.down || 0; }
@@ -467,7 +468,8 @@ function ruleHitPoints(full, verdict, up, down) {
 // Слабая метка: «?»-варианты, «консерва?», любая «👀 слежу».
 function isWeakHit(h) {
   // 1.3.89 (владелец, 11.11): «клоун» (метка места) у «свого» тоже сворачивается; спорщик (−1) остаётся
-  return !!h && (h.verdict === 'unclear' || h.kons === 'weak' || h.tag === 'слежу' || (h.tag === 'клоун' && h.verdict !== 'debater'));
+  // 1.3.90 (владелец, 11.11): у «свого» прячется ЛЮБАЯ консерва — после банов люди заново заезжают в tj и набирают карму
+  return !!h && (h.verdict === 'unclear' || !!h.kons || h.tag === 'слежу' || (h.tag === 'клоун' && h.verdict !== 'debater'));
 }
 
 // ---------- сервисные боты ----------

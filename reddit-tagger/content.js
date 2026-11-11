@@ -12,6 +12,7 @@
     presetsV: PRESETS_VERSION,
     showAdd: true,
     size: 'm', // размер значков у ника: s / m / l
+    trustStyle: 'bar', // «свій»: зелёная полоска справа от ника ('bar') или текстовая плашка ('text') — 1.3.90
     compact: 'auto', // сворачивать длинные метки в «значок + число»: auto (при 3+ метках) / always / never
     // Автопроверка: [{ icon, tag, subs: ['sub1', ...], min: 1, points: 2 }] — points: баллов за 10 нахрюков
     autoOn: true,
@@ -591,7 +592,7 @@
         const o = ev[kind] || { n: 0 };
         if (kind === 'clown' && settings.clownOn === false) continue; // «клоун» выключен в настройках
         const full = srvRuleFull(kind, o.n); // слежу 1, клоун — за нахрюки до 2, орк — за нахрюки (score.js)
-        out.push({ ...base, icon: RULE_KIND[kind].icon, tag: RULE_KIND[kind].tag, kind, n: o.n || 0, up: o.up || 0, down: o.down || 0, posts: o.posts, comments: o.comments,
+        out.push({ ...base, icon: RULE_KIND[kind].icon, tag: RULE_KIND[kind].tag, kind, n: o.n || 0, up: o.up || 0, down: o.down || 0, posts: o.posts, comments: o.comments, bySub: o.bySub,
           verdict, points: ruleHitPoints(full, verdict, o.up || 0, o.down || 0) });
       }
     }
@@ -809,7 +810,9 @@
     const name = hs.map((x) => (x.kons ? '🥫 ' + T('консерва') + (x.kons === 'weak' ? '?' : '') : x.homeDown ? '👎 ' + T('минусуют тут') : x.verdict === 'debater' ? '🥊 ' + T('спорщик') + ' ' + x.icon : x.icon + ' ' + ruleName(x) + (x.verdict === 'unclear' ? '?' : ''))).join(', ');
     const f = ev.farm || {};
     // Цифры по каждому сработавшему правилу сабов — именно его источника.
-    const rules = hs.filter((x) => x.kind).map((x) => `${x.icon} ` + (x.posts != null ? T('{p} пост. + {c} комм.', { p: x.posts, c: x.comments }) : x.n) + ` (+${x.up || 0}/−${x.down || 0})`);
+    // по каждому правилу — в каких сабах (1.3.90: «r/expectedrussians 12, r/vataru 2»), только числа
+    const subsOf = (x) => x.bySub && typeof x.bySub === 'object' ? Object.entries(x.bySub).filter(([, n]) => +n > 0).map(([s, n]) => `r/${String(s).replace(/[^\w]/g, '')} ${+n}`).join(', ') + ': ' : '';
+    const rules = hs.filter((x) => x.kind).map((x) => `${x.icon} ` + subsOf(x) + (x.posts != null ? T('{p} пост. + {c} комм.', { p: x.posts, c: x.comments }) : x.n) + ` (+${x.up || 0}/−${x.down || 0})`);
     // из памяти браузера, а сервер сейчас не ответил — так и пишем, не выдаём за свежее
     const stale = h.srv.stale ? T('⚠ из памяти браузера: сервер сейчас не ответил') + '\n' : '';
     // кто проверял: ручной вердикт владельца (ev.by = 'manual') или скрипт; без поля — скрипт (все старые — автоматические)
@@ -824,7 +827,7 @@
       ? T('свой: в r/tjournal_refugees заплюсовано {u} из {t} комментов (видна не вся история) — слабые подозрения скрыты, уверенные метки в полную силу', { u: tr.trust.cUp, t: tr.trust.cUp + tr.trust.cDown })
       : T('свой: в r/tjournal_refugees заплюсовано {u} из {t} — слабые подозрения скрыты, автобаллы пополам', { u: tr.trust.up, t: tr.trust.up + tr.trust.down });
     const hid = tr && tr.hidden && tr.hidden.length
-      ? T('скрыто, потому что свой: {h}', { h: tr.hidden.map((x) => x.kons ? '🥫?' : `${x.icon || '🔍'}${x.verdict === 'unclear' ? '?' : ''}×${x.n}`).join(' · ') }) : '';
+      ? T('скрыто, потому что свой: {h}', { h: tr.hidden.map((x) => x.kons ? (x.kons === 'weak' ? '🥫?' : '🥫') : `${x.icon || '🔍'}${x.verdict === 'unclear' ? '?' : ''}×${x.n}`).join(' · ') }) : '';
     const rest = hits.filter((h) => !h.trust);
     const srv = rest.filter((h) => h.srv);
     const main = srv.length ? srvText(srv) : autoLineLocal(rest);
@@ -862,8 +865,12 @@
     const people = Math.max(oc.p, mine ? 1 : 0);
     const complaints = Math.max(oc.n, mine);
     // автобаллы (со спорщиком — минус) не уходят ниже нуля; жалобы считаются отдельно и полностью
-    const pts = botPoints(people, complaints, Math.max(0, hits.reduce((a, h) => a + h.points, 0)));
-    return { pct: botPercent(pts, settings.halfAt), mine, group: groupComp(k), pub: oc.pub, hits };
+    const auto = Math.max(0, hits.reduce((a, h) => a + h.points, 0));
+    const pts = botPoints(people, complaints, auto);
+    // «звідки відсотки» (1.3.90): то же по отдельности — только автопроверка и только жалобы (шкала не складывается)
+    const autoPct = botPercent(botPoints(0, 0, auto), settings.halfAt);
+    const compPct = botPercent(botPoints(people, complaints, 0), settings.halfAt);
+    return { pct: botPercent(pts, settings.halfAt), autoPct, compPct, mine, group: groupComp(k), pub: oc.pub, hits };
   }
   const meterColor = (p) => (p < 30 ? '#46a758' : p < 60 ? '#ffc53d' : p < 85 ? '#f76b15' : '#e5484d');
   function meterLine(s) {
@@ -873,6 +880,8 @@
     if (s.group.n) parts.push(T('жалоб в группе: {n} от {p} чел.', { n: s.group.n, p: s.group.p }));
     const counted = s.hits.filter((h) => h.points > 0);
     if (counted.length) parts.push(T('сработала автопроверка: ') + counted.map((h) => (h.homeDown ? T('минусуют') : h.hiddenP ? T('профиль скрыт') : h.tag)).join(', '));
+    // откуда проценты: если есть и автопроверка, и жалобы — сколько дало бы каждое само по себе
+    if (s.autoPct && s.compPct) parts.push(T('по отдельности: автопроверка {a}%, жалобы {c}%', { a: s.autoPct, c: s.compPct }));
     return parts.join(' · ');
   }
 
@@ -1049,6 +1058,15 @@
     // Авто-метки (пунктир), если такой метки нет у меня вручную.
     for (const h of score.hits) {
       if (u?.tags?.includes(h.tag)) continue;
+      // «свій» — тонкая зелёная полоска сразу справа от ника (1.3.90, владелец: «чтобы глаза не мозолила»);
+      // старая текстовая плашка — настройкой trustStyle: 'text'. Полоса — первой, перед нахрюкометром.
+      if (h.trust && settings.trustStyle !== 'text') {
+        const bar = document.createElement('span');
+        bar.className = 'rt-trust-bar';
+        bar.title = T('свой');
+        wrap.prepend(bar);
+        continue;
+      }
       const b = document.createElement('span');
       b.className = 'rt-badge rt-auto' + (h.verdict === 'debater' ? ' rt-debater' : '') + (h.trust ? ' rt-trust' : '');
       if (h.trust) {

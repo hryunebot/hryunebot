@@ -162,6 +162,8 @@ html[data-rt-size="l"] .rt-add { font-size: 15px; }
 
 /* «свій» — давний и хорошо принятый в tj */
 /* зелёная текстовая плашка «свій» (1.3.83): одинаково читается на светлой и тёмной теме, размер — как у остальных меток */
+/* «свій» по умолчанию (1.3.90): тонкая зелёная вертикальная полоска сразу справа от ника, без текста */
+.rt-trust-bar { display: inline-block; width: 3px; height: 1em; background: #2f9e44; border-radius: 2px; vertical-align: -0.15em; margin: 0 3px 0 1px; flex: none; }
 .rt-trust { background: #2f9e44 !important; color: #fff !important; border: 1px solid #2f9e44 !important; opacity: 1 !important; font-weight: 700; }
 /* плашка-логотип TJ — для ветеранов оригинального TJournal (ручная выдача, WISHLIST п.10); пока нигде не выводится */
 .rt-tjvet .rt-tj { height: 1.05em; width: 2.75em; display: block; }

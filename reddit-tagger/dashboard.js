@@ -8,6 +8,7 @@ const DEFAULT_SET = {
   presetsV: PRESETS_VERSION,
   showAdd: true,
   size: 'm',
+  trustStyle: 'bar',
   compact: 'auto',
   autoOn: true,
   autoSubs: ['tjournal_refugees'],
@@ -635,6 +636,8 @@ function renderSettings() {
         <select id="sizeSel">${[['s', T('маленький')], ['m', T('средний')], ['l', T('большой')]].map(([v, t]) => `<option value="${v}" ${(settings.size || 'm') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
       <div class="row" style="font-weight:400">${T('Сворачивать длинные метки (значок и число, полный текст — при наведении)')}
         <select id="compactSel">${[['auto', T('при 3 и больше метках')], ['always', T('всегда')], ['never', T('никогда')]].map(([v, t]) => `<option value="${v}" ${(settings.compact || 'auto') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+      <div class="row" style="font-weight:400">${T('Метка «свій»')}
+        <select id="trustStyleSel">${[['bar', T('зелёная полоска')], ['text', T('текст')]].map(([v, t]) => `<option value="${v}" ${(settings.trustStyle === 'text' ? 'text' : 'bar') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
       <label class="row" style="font-weight:400"><input type="checkbox" id="showAdd" ${settings.showAdd ? 'checked' : ''}> ${T('Показывать 🏷 рядом с непомеченными никами')}</label>
       <label class="row" style="font-weight:400"><input type="checkbox" id="pubOn" ${settings.pubOn !== false ? 'checked' : ''}> ${T('Общий слой: мои жалобы и базовые метки (зрадойоб, орк, новорег, консерва) видят все пользователи Хрюнебота, а я — их. Чужая метка видна, когда её поставили 3+ человека.')}</label>
       <label class="row" style="font-weight:400"><input type="checkbox" id="helpQueue" ${settings.helpQueue === true ? 'checked' : ''}> ${T('Помогать пополнять базу: ник, который Хрюнебот проверил сам и которого нет на сервере, уходит владельцу в очередь (только ник и цифры проверки). Публикует владелец после своей проверки.')}</label>
@@ -693,6 +696,7 @@ function renderSettings() {
   // Размер тоже сразу — открытые вкладки reddit перерисуются сами
   $('#sizeSel').onchange = (e) => { settings.size = e.target.value; saveSettings(); };
   $('#compactSel').onchange = (e) => { settings.compact = e.target.value; saveSettings(); };
+  $('#trustStyleSel').onchange = (e) => { settings.trustStyle = e.target.value; saveSettings(); };
   // Подсказка: сколько процентов даст 1, 3 и 10 человек при выбранной строгости
   const hint = () => {
     const h = Math.max(1, +$('#halfAt').value || 7);
