@@ -63,6 +63,9 @@ if (Test-Path $ffSignedPath) {
 }
 $ffHash = (Get-FileHash -Algorithm SHA256 $ffXpi).Hash.ToLower()
 
+# 1г. Логика проверки для сервера (автоочередь, 1.3.91): server\src\check.gen.js из того же score.js/background.js
+node tools\gen-server-check.mjs
+
 # 2. EXE: компилируем installer\Setup.cs встроенным csc (.NET Framework 4.x есть в Windows 10/11).
 #    Внутрь кладём расширение, картинку хрюнебота, подписанную версию для Firefox (если есть) и их контрольные суммы.
 $csc = "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\csc.exe"
@@ -117,12 +120,26 @@ Copy-Item installer\README-Windows.txt (Join-Path $win 'README-Windows.txt')
 $winZip = Join-Path $out 'Hryunebot-Windows.zip'
 New-Zip $win $winZip
 
+# 3в. macOS (владелец, 13.11.2026): dist\Hryunebot-macOS.zip — папка hryunebot\, подписанный .xpi, INSTALL.command (bash,
+#     только LF) и README-macOS.txt. Запуск — «bash ~/Downloads/Hryunebot-macOS/INSTALL.command» (двойной клик macOS блокирует).
+$mac = Join-Path $tmp 'mac'
+New-Item -ItemType Directory -Force $mac | Out-Null
+Copy-Item -Recurse $ext (Join-Path $mac 'hryunebot')
+if ($ffSigned) { Copy-Item $ffXpi (Join-Path $mac 'hryunebot-firefox.xpi') }
+$cmdTxt = [IO.File]::ReadAllText((Resolve-Path installer\mac.command)).Replace("`r`n", "`n")
+[IO.File]::WriteAllText((Join-Path $mac 'INSTALL.command'), $cmdTxt, (New-Object System.Text.UTF8Encoding $false))
+Copy-Item installer\README-macOS.txt (Join-Path $mac 'README-macOS.txt')
+$macZip = Join-Path $out 'Hryunebot-macOS.zip'
+New-Zip $mac $macZip
+
 # 4. Контрольные суммы (укр. / рус.)
 $exeHash = (Get-FileHash -Algorithm SHA256 (Join-Path $out $exeName)).Hash.ToLower()
 $shHash = (Get-FileHash -Algorithm SHA256 (Join-Path $out 'hryunebot-linux.sh')).Hash.ToLower()
 $winHash = (Get-FileHash -Algorithm SHA256 $winZip).Hash.ToLower()
+$macHash = (Get-FileHash -Algorithm SHA256 $macZip).Hash.ToLower()
 $sums = @(
   "$winHash  Hryunebot-Windows.zip",
+  "$macHash  Hryunebot-macOS.zip",
   "$exeHash  $exeName",
   "$shHash  hryunebot-linux.sh",
   "$ffHash  $(Split-Path $ffXpi -Leaf)",
@@ -140,15 +157,16 @@ if ($ffSigned -and $signedVer -eq $version) {
   New-Item -ItemType Directory -Force $dl | Out-Null
   # .exe на страницу больше не кладём (эвристики антивирусов) — вместо него zip с INSTALL.cmd
   Copy-Item $winZip (Join-Path $dl 'Hryunebot-Windows.zip')
+  Copy-Item $macZip (Join-Path $dl 'Hryunebot-macOS.zip')
   Copy-Item (Join-Path $out 'hryunebot-linux.sh') (Join-Path $dl 'hryunebot-linux.sh')
   Copy-Item $ffXpi (Join-Path $dl 'hryunebot-firefox.xpi')
   $info = [ordered]@{ version = $version; built = (Get-Date).ToString('yyyy-MM-dd');
-    sha256 = [ordered]@{ 'Hryunebot-Windows.zip' = $winHash; 'hryunebot-linux.sh' = $shHash; 'hryunebot-firefox.xpi' = $ffHash } }
+    sha256 = [ordered]@{ 'Hryunebot-Windows.zip' = $winHash; 'Hryunebot-macOS.zip' = $macHash; 'hryunebot-linux.sh' = $shHash; 'hryunebot-firefox.xpi' = $ffHash } }
   [IO.File]::WriteAllText((Join-Path $dl 'version.json'), ($info | ConvertTo-Json), (New-Object System.Text.UTF8Encoding $false))
   # Страница с версией и SHA-256 той же сборки — видны без JavaScript (шаблон installer\download-page.html)
   $page = [IO.File]::ReadAllText((Resolve-Path installer\download-page.html)).
     Replace('{{VERSION}}', $version).Replace('{{BUILT}}', $info.built).
-    Replace('{{SHA_XPI}}', $ffHash).Replace('{{SHA_ZIP}}', $winHash).Replace('{{SHA_SH}}', $shHash)
+    Replace('{{SHA_XPI}}', $ffHash).Replace('{{SHA_ZIP}}', $winHash).Replace('{{SHA_MAC}}', $macHash).Replace('{{SHA_SH}}', $shHash)
   $page = $page -replace '^<!--[\s\S]*?-->\r?\n', ''   # служебный комментарий шаблона на сайт не идёт
   if ($page -match '\{\{') { throw 'download-page.html: остались незаполненные {{…}}' }
   [IO.File]::WriteAllText((Join-Path (Split-Path $dl) 'index.html'), $page, (New-Object System.Text.UTF8Encoding $false))

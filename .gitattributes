@@ -1,0 +1,3 @@
+# Скрипты для macOS/Linux — только LF (иначе bash спотыкается о символ CR)
+*.command text eol=lf
+*.sh text eol=lf

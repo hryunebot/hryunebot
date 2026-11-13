@@ -158,34 +158,8 @@ function homeEv(subs, votes, subsP, votesP) {
   const st = ctx.homeStats(votes, HOME, votesP, sumv(subs) - sumv(subsP));
   return { cUp: st.cUp, cDown: st.cDown, trunc: st.trunc };
 }
-// Вердикт по данным архива — так же, как autoHits в content.js
-function verdict(a) {
-  const now = Date.now();
-  const age = a.first > 0 ? (now / 1000 - a.first) / 86400 : 0;
-  const rec = { n: a.recent.n, cyr: a.recent.cyr, lat: a.recent.lat, cyrPosts: a.recent.cyrPosts, sleep: Math.round(a.sleep || 0) };
-  const fk = ctx.farmKarma(a.lk, a.ck, a.votes, a.votesP); // неизвестная карма — null
-  const farm = ctx.konsFarm(a.farm, fk.lk, fk.ck);
-  const tags = [];
-  const hv = ctx.homeVotes(a.votes, HOME);
-  const kv = ctx.konservaVerdict(age, rec, a, a.sleep || 0, farm, hv.hit);
-  if (kv === 'full') tags.push('kons'); else if (kv === 'weak') tags.push('kons?');
-  if (hv.hit) tags.push('homedown');
-  const rt = ruleTags({ subs: a.subs, votes: a.votes, subsP: a.subsP, votesP: a.votesP });
-  rt.tags.forEach((t) => tags.push(t));
-  const ork = rt.ev.ork || { n: 0, up: 0, down: 0 };
-  if (!tags.length) tags.push('clean');
-  const ev = {
-    age: Math.round(age), sleep: Math.round(a.sleep || 0), lk: a.lk ?? null, ck: a.ck ?? null,
-    farm: a.farm ? { posts: a.farm.posts, burst: a.farm.burst, imgShort: a.farm.imgShort } : null,
-    old: { n: a.old.n, cyr: a.old.cyr, lat: a.old.lat, nsfw: a.old.nsfw },
-    rec: { n: rec.n, cyr: rec.cyr, lat: rec.lat, cyrPosts: rec.cyrPosts },
-    by: 'auto', // вердикт посчитан скриптом, не ручной (1.3.89: «автоперевірка Хрюнебота», а не «перевірено власником»)
-    home: { up: hv.up, down: hv.down, eUp: hv.eUp, eDown: hv.eDown, ...homeEv(a.subs, a.votes, a.subsP, a.votesP) }, ork, clown: rt.ev.clown || null, watch: rt.ev.watch || null,
-  };
-  // raw — сабы и оценки по ним; хранится только у нас в файле (на сервер не уходит): при новых «орочьих» сабах
-  // вердикты пересчитываются без запросов к архиву (--recompute).
-  return { tags, ev, raw: { subs: a.subs || {}, votes: a.votes || {}, subsP: a.subsP || {}, votesP: a.votesP || {} } };
-}
+// Вердикт по данным архива — общий с сервером (score.js archVerdict, 1.3.91)
+function verdict(a) { return ctx.archVerdict(a, HOME, Date.now()); }
 
 // Метки правил по сабам («👹 орк», «🤡 клоун»): код для сервера + цифры. Используется и при проверке,
 // и при пересчёте по сохранённым сабам (--recompute).

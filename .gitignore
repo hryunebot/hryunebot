@@ -9,3 +9,4 @@ dist/
 
 server/public/download/files/
 server/public/download/index.html
+trust-secret.txt

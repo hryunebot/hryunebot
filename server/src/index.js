@@ -3,6 +3,10 @@
 // Группа: создатель получает код приглашения, остальные входят по коду.
 // Метка группы показывается у ника, когда её поставили не меньше min_votes участников.
 
+import { runAutoQueue, autoMode } from './autoqueue.js';
+import { syncRoutes } from './sync.js';
+import { acctOf, newCode, trustStatus, trustTagMin, trustComplaintMin, TRUSTED_JOIN, TRUST, normNick, approvePending } from './trust.js';
+
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET,POST,OPTIONS',
@@ -38,13 +42,22 @@ async function auth(db, req) {
   const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
   if (!token) fail(401, 'Нет токена');
   const row = await db
-    .prepare('SELECT m.token_hash, g.id, g.name, g.code, g.min_votes FROM members m JOIN groups g ON g.id = m.group_id WHERE m.token_hash = ?')
+    .prepare('SELECT m.token_hash, m.blocked, g.id, g.name, g.code, g.min_votes FROM members m JOIN groups g ON g.id = m.group_id WHERE m.token_hash = ?')
     .bind(await sha(token))
     .first();
   if (!row) fail(401, 'Токен не найден — войдите в группу заново');
-  return { member: row.token_hash, group: { id: row.id, name: row.name, code: row.code, minVotes: row.min_votes } };
+  return { member: row.token_hash, blocked: !!row.blocked, group: { id: row.id, name: row.name, code: row.code, minVotes: row.min_votes } };
+}
+// п.15: устройство, отключённое сменой ключа синхронизации, новых голосов и жалоб не шлёт (принятые остаются в счёте)
+function notBlocked(a) {
+  if (a.blocked) fail(403, 'Устройство отключено сменой ключа синхронизации — введите новый ключ');
 }
 
+// Все токены той же личности синхронизации (п.15), включая сам токен; без синхронизации — только он.
+// И все установки того же подтверждённого аккаунта (acct) — в т.ч. отключённые сменой ключа: их принятые голоса считаются,
+// пока личность их не поменяет. Параметры: member, member, member.
+const SAME_PERSON = `SELECT ? UNION SELECT token_hash FROM sync_devices WHERE ident = (SELECT ident FROM sync_devices WHERE token_hash = ?)
+  UNION SELECT token_hash FROM members WHERE acct IS NOT NULL AND acct = (SELECT acct FROM members WHERE token_hash = ?)`;
 const PUBLIC = 'public'; // общий слой для всех пользователей: жалобы + базовые метки
 // В общий слой идут только базовые метки (свои — нет); видны, когда метку поставили 3+ разных человека (владелец, 09.11).
 const PUBLIC_TAGS = new Set(['зрадойоб', 'орк', 'новорег', 'консерва']);
@@ -134,7 +147,8 @@ const routes = {
 
   // Поставить свои метки: { items: [{ user, tags: [...], sub }] } — заменяет прежние метки этого участника на юзера.
   'POST /vote': async (db, body, req) => {
-    const { member, group } = await auth(db, req);
+    const a = await auth(db, req); notBlocked(a);
+    const { member, group } = a;
     const pub = group.id === PUBLIC;
     const items = (Array.isArray(body.items) ? body.items : [body]).slice(0, 100);
     const used = await db.prepare('SELECT COUNT(*) n FROM votes WHERE member = ? AND created > ?').bind(member, Date.now() - DAY).first();
@@ -146,7 +160,9 @@ const routes = {
       if (!USER_RE.test(name)) continue;
       const user = name.toLowerCase();
       const tags = [...new Set((it.tags || []).map(cleanTag).filter((t) => t && (!pub || PUBLIC_TAGS.has(t))))].slice(0, 10);
-      stmts.push(db.prepare('DELETE FROM votes WHERE group_id = ? AND member = ? AND user = ?').bind(group.id, member, user));
+      // п.15: голос — личности, а не устройства: правка с любого её устройства сразу заменяет голоса всех её устройств
+      // (снял метку на телефоне — комп, даже выключенный, больше не голосует)
+      stmts.push(db.prepare(`DELETE FROM votes WHERE group_id = ? AND user = ? AND member IN (${SAME_PERSON})`).bind(group.id, user, member, member, member));
       for (const tag of tags) {
         if (budget-- <= 0) fail(429, 'Лимит меток на сегодня исчерпан');
         stmts.push(db.prepare('INSERT INTO votes (group_id, member, user, name, tag, sub, created) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(group.id, member, user, name, tag, cleanSub(it.sub), now));
@@ -157,18 +173,24 @@ const routes = {
   },
 
   // Метки группы для списка ников: { users: [...] } → { users: { ник: { метка: голосов } } }
-  'POST /lookup': async (db, body, req) => {
+  'POST /lookup': async (db, body, req, env) => {
     const { group } = await auth(db, req);
+    const pub = group.id === PUBLIC; // общий слой: считаем только довірених, один аккаунт = один голос (п.14)
     const names = [...new Set((body.users || []).map((u) => String(u).toLowerCase()).filter((u) => USER_RE.test(u)))].slice(0, 400);
     const out = {};
     const complaints = {};
     for (const part of chunk(names, 90)) { // у D1 лимит 100 параметров на запрос
       const ph = part.map(() => '?').join(',');
-      const [v, c] = await db.batch([
-        db.prepare(`SELECT user, tag, COUNT(*) c FROM votes WHERE group_id = ? AND user IN (${ph}) GROUP BY user, tag HAVING c >= ?`).bind(group.id, ...part, group.id === PUBLIC ? PUBLIC_TAG_MIN : group.minVotes),
-        // В общем слое жалобы видны, только когда пожаловались минимум min_votes разных людей.
+      const [v, c] = await db.batch(pub ? [
+        db.prepare(`SELECT v.user, v.tag, COUNT(DISTINCT tm.acct) c FROM votes v ${TRUSTED_JOIN('v')}
+            WHERE v.group_id = ? AND v.user IN (${ph}) GROUP BY v.user, v.tag HAVING c >= ?`).bind(group.id, ...part, trustTagMin(env)),
+        // общий слой: один аккаунт = ОДИН голос против ника (n = p) — повторные жалобы/причины не добавляют голосов
+        db.prepare(`SELECT c.user, COUNT(DISTINCT tm.acct) n, COUNT(DISTINCT tm.acct) p FROM complaints c ${TRUSTED_JOIN('c')}
+            WHERE c.group_id = ? AND c.user IN (${ph}) GROUP BY c.user HAVING p >= ?`).bind(group.id, ...part, trustComplaintMin(env)),
+      ] : [
+        db.prepare(`SELECT user, tag, COUNT(*) c FROM votes WHERE group_id = ? AND user IN (${ph}) GROUP BY user, tag HAVING c >= ?`).bind(group.id, ...part, group.minVotes),
         db.prepare(`SELECT user, COUNT(*) n, COUNT(DISTINCT member) p FROM complaints WHERE group_id = ? AND user IN (${ph}) GROUP BY user HAVING p >= ?`)
-          .bind(group.id, ...part, group.id === PUBLIC ? group.minVotes : 1),
+          .bind(group.id, ...part, 1),
       ]);
       for (const r of v.results) (out[r.user] ??= {})[r.tag] = r.c;
       for (const r of c.results) complaints[r.user] = { n: r.n, p: r.p };
@@ -183,7 +205,7 @@ const routes = {
         try { verdicts[x.user] = { tags: JSON.parse(x.tags), ev: x.evidence ? JSON.parse(x.evidence) : null, checked: toDay(x.checked) }; } catch { /* битая строка — пропускаем */ }
       }
     }
-    return json({ users: out, complaints, verdicts, minVotes: group.id === PUBLIC ? PUBLIC_TAG_MIN : group.minVotes });
+    return json({ users: out, complaints, verdicts, minVotes: pub ? trustTagMin(env) : group.minVotes, trusted: pub });
   },
 
   // Вердикты владельца — открыто, без входа (это публичные выводы из публичных данных reddit):
@@ -245,14 +267,15 @@ const routes = {
   },
 
   // Жалоба на пост/коммент: { user, thing, sub, reason, link, undo? }
-  'POST /complain': async (db, body, req) => {
-    const { member, group } = await auth(db, req);
+  'POST /complain': async (db, body, req, env) => {
+    const a = await auth(db, req); notBlocked(a);
+    const { member, group } = a;
     const name = String(body.user || '').replace(/^\/?u\//i, '');
     if (!USER_RE.test(name)) fail(400, 'Некорректный ник');
     const user = name.toLowerCase();
     const thing = String(body.thing || '').slice(0, 30) || 'manual-' + rnd(10);
     if (body.undo) {
-      await db.prepare('DELETE FROM complaints WHERE group_id = ? AND member = ? AND user = ? AND thing = ?').bind(group.id, member, user, thing).run();
+      await db.prepare(`DELETE FROM complaints WHERE group_id = ? AND user = ? AND thing = ? AND member IN (${SAME_PERSON})`).bind(group.id, user, thing, member, member, member).run();
       return json({ ok: true });
     }
     const used = await db.prepare('SELECT COUNT(*) n FROM complaints WHERE member = ? AND created > ?').bind(member, Date.now() - DAY).first();
@@ -262,8 +285,10 @@ const routes = {
       .prepare('INSERT OR IGNORE INTO complaints (group_id, member, user, name, thing, sub, reason, link, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .bind(group.id, member, user, name, thing, cleanSub(body.sub), cleanTag(body.reason) || null, link, toHour(Date.now()))
       .run();
-    const c = await db.prepare('SELECT COUNT(*) n, COUNT(DISTINCT member) p FROM complaints WHERE group_id = ? AND user = ?').bind(group.id, user).first();
-    const hidden = group.id === PUBLIC && c.p < group.minVotes; // ниже порога чужие жалобы не раскрываем
+    const c = group.id === PUBLIC
+      ? await db.prepare(`SELECT COUNT(DISTINCT tm.acct) n, COUNT(DISTINCT tm.acct) p FROM complaints c ${TRUSTED_JOIN('c')} WHERE c.group_id = ? AND c.user = ?`).bind(group.id, user).first()
+      : await db.prepare('SELECT COUNT(*) n, COUNT(DISTINCT member) p FROM complaints WHERE group_id = ? AND user = ?').bind(group.id, user).first();
+    const hidden = group.id === PUBLIC && c.p < trustComplaintMin(env); // ниже порога (довірених) чужие жалобы не раскрываем
     return json({ ok: true, complaints: hidden ? { n: 0, p: 0 } : { n: c.n, p: c.p } });
   },
 
@@ -288,15 +313,20 @@ const routes = {
   },
 
   // Все жалобы группы (последние 1000), с пометкой, какие мои.
-  'GET /complaints': async (db, _b, req) => {
+  'GET /complaints': async (db, _b, req, env) => {
     const { member, group } = await auth(db, req);
-    // В общем слое: мои жалобы + жалобы на тех, на кого пожаловались минимум min_votes разных людей.
-    const min = group.id === PUBLIC ? group.minVotes : 1;
-    const { results } = await db
-      .prepare(`SELECT member, user, name, thing, sub, reason, link, created FROM complaints
+    // В общем слое (п.14): мои жалобы + жалобы ДОВІРЕНИХ на тех, на кого пожаловались минимум N разных довірених аккаунтов.
+    const pubSql = `SELECT member, user, name, thing, sub, reason, link, created FROM complaints
+        WHERE group_id = ?1 AND (member = ?2 OR (
+          member IN (SELECT m.token_hash FROM members m JOIN trusted t ON t.acct = m.acct AND t.revoked IS NULL)
+          AND user IN (SELECT c.user FROM complaints c ${TRUSTED_JOIN('c')} WHERE c.group_id = ?1 GROUP BY c.user HAVING COUNT(DISTINCT tm.acct) >= ?3)))
+        ORDER BY created DESC, user, thing LIMIT 1000`;
+    const grpSql = `SELECT member, user, name, thing, sub, reason, link, created FROM complaints
         WHERE group_id = ?1 AND (member = ?2 OR user IN (SELECT user FROM complaints WHERE group_id = ?1 GROUP BY user HAVING COUNT(DISTINCT member) >= ?3))
-        ORDER BY created DESC, user, thing LIMIT 1000`) // не по порядку вставки, чтобы не выдавать очерёдность
-      .bind(group.id, member, min)
+        ORDER BY created DESC, user, thing LIMIT 1000`; // не по порядку вставки, чтобы не выдавать очерёдность
+    const { results } = await db
+      .prepare(group.id === PUBLIC ? pubSql : grpSql)
+      .bind(group.id, member, group.id === PUBLIC ? trustComplaintMin(env) : 1)
       .all();
     return json({
       complaints: results.map((r) => ({
@@ -419,6 +449,94 @@ const routes = {
     return json({ ok: true, marked: stmts.length });
   },
 
+  // ---- довірені (п.14) ----
+  // Статус своей установки: none | pending (код, срок) | trusted | denied (причина) | revoked | expired
+  'GET /trust/status': async (db, _b, req, env) => {
+    const { member, group } = await auth(db, req);
+    if (group.id !== PUBLIC) fail(400, 'Доверие — только для общего слоя');
+    return json({ ...(await trustStatus(db, member)), tagMin: trustTagMin(env), complaintMin: trustComplaintMin(env), on: !!(env && env.TRUST_SECRET) });
+  },
+  // Заявка: { nick } → одноразовый код на 24 ч, привязан к этой установке (новая заявка заменяет старую)
+  'POST /trust/start': async (db, body, req, env) => {
+    const { member, group } = await auth(db, req);
+    if (group.id !== PUBLIC) fail(400, 'Доверие — только для общего слоя');
+    const nick = normNick(body && body.nick);
+    if (!USER_RE.test(nick)) fail(400, 'Неверный ник');
+    await acctOf(env, nick); // проверка, что сервер настроен (секрет есть)
+    const st = await trustStatus(db, member);
+    if (st.status === 'trusted') return json(st);
+    // лимит заявок с одной установки (п.7): не больше TRUST.startsPerDay новых кодов в сутки
+    const now = Date.now();
+    const lim = await db.prepare("SELECT COUNT(*) n FROM trust_starts WHERE token_hash = ? AND t > ?").bind(member, now - DAY).first();
+    if (lim && lim.n >= TRUST.startsPerDay) fail(429, 'Слишком много заявок — попробуйте завтра');
+    const code = newCode();
+    await db.batch([
+      db.prepare('DELETE FROM trust_status WHERE token_hash = ?').bind(member),
+      db.prepare('INSERT OR REPLACE INTO trust_pending (token_hash, nick, code, created, expires, checked, tries) VALUES (?, ?, ?, ?, ?, 0, 0)')
+        .bind(member, nick, code, now, now + TRUST.codeTtl),
+      db.prepare('INSERT INTO trust_starts (token_hash, t) VALUES (?, ?)').bind(member, now),
+      db.prepare('DELETE FROM trust_starts WHERE t < ?').bind(now - 7 * DAY),
+    ]);
+    return json({ status: 'pending', code, expires: now + TRUST.codeTtl });
+  },
+  'POST /trust/cancel': async (db, _b, req) => {
+    const { member } = await auth(db, req);
+    await db.prepare('DELETE FROM trust_pending WHERE token_hash = ?').bind(member).run();
+    return json({ ok: true });
+  },
+  // Владелец: ручной допуск / отзыв по нику (сервер хранит только HMAC-id, ника не хранит)
+  'POST /admin/trust/grant': async (db, body, req, env) => {
+    await adminAuth(db, req);
+    const acct = await acctOf(env, body && body.user);
+    await db.prepare("INSERT INTO trusted (acct, by, granted, revoked) VALUES (?, 'manual', ?, NULL) ON CONFLICT(acct) DO UPDATE SET by = 'manual', revoked = NULL")
+      .bind(acct, Date.now()).run();
+    return json({ ok: true, id: acct.slice(0, 8) });
+  },
+  // Подтвердить заявку вручную (архив отстаёт): { code } — код ОДНОЙ заявки, сверенный с человеком в знакомом канале
+  'POST /admin/trust/approve': async (db, body, req, env) => {
+    await adminAuth(db, req);
+    return json({ ok: true, ...(await approvePending(db, env, body && body.code)) });
+  },
+  'POST /admin/trust/revoke': async (db, body, req, env) => {
+    await adminAuth(db, req);
+    const acct = await acctOf(env, body && body.user);
+    const r = await db.prepare('UPDATE trusted SET revoked = ? WHERE acct = ?').bind(Date.now(), acct).run();
+    return json({ ok: true, revoked: (r.meta && r.meta.changes) || 0, id: acct.slice(0, 8) });
+  },
+  'GET /admin/trust': async (db, _b, req, env) => {
+    await adminAuth(db, req);
+    const { results } = await db.prepare(`SELECT t.acct, t.by, t.granted, t.revoked,
+        (SELECT COUNT(*) FROM members m WHERE m.acct = t.acct) devices FROM trusted t ORDER BY t.granted DESC LIMIT 1000`).all();
+    const pend = await db.prepare('SELECT COUNT(*) n FROM trust_pending WHERE expires > ?').bind(Date.now()).first();
+    // заявки в ожидании — ник виден владельцу, чтобы он мог подтвердить знакомого вручную (п.3); без «Ж-…» и без токенов
+    const pl = await db.prepare('SELECT nick, code, created, COALESCE(tries, 0) tries FROM trust_pending WHERE expires > ? ORDER BY created LIMIT 200').bind(Date.now()).all();
+    return json({ tagMin: trustTagMin(env), complaintMin: trustComplaintMin(env), pending: pend.n,
+      requests: (pl.results || []).map((r) => ({ nick: r.nick, code: r.code, created: toDay(r.created), tries: r.tries })),
+      trusted: results.map((r) => ({ id: r.acct.slice(0, 8), by: r.by, granted: toDay(r.granted), revoked: r.revoked ? toDay(r.revoked) : null, devices: r.devices })) });
+  },
+
+  // Автоочередь (1.3.91): запустить один проход вручную (как по расписанию; режим — AUTOQUEUE в wrangler.toml)
+  // { users: ['ник', …] } (до 3) — проверить именно их, ВСЕГДА как тест (без публикации), с замерами по каждому
+  'POST /admin/autoqueue/run': async (db, body, req, env) => {
+    await adminAuth(db, req);
+    const users = Array.isArray(body && body.users) ? body.users.slice(0, 3) : null;
+    const e = users ? { ...(env || {}), AUTOQUEUE: 'test' } : (env || {});
+    return json(await runAutoQueue(db, e, users ? { users } : {}));
+  },
+  // Результаты тестового режима (наружу не публикуются): для сравнения с check-tj
+  'GET /admin/autoqueue/test': async (db, _b, req, env) => {
+    await adminAuth(db, req);
+    const { results } = await db.prepare('SELECT name, tags, evidence, t, err, tries FROM autoqueue_test ORDER BY t DESC LIMIT 1000').all();
+    return json({ mode: autoMode(env || {}), items: results.map((r) => ({ name: r.name, tags: JSON.parse(r.tags), evidence: r.evidence ? JSON.parse(r.evidence) : null, t: r.t, err: r.err, tries: r.tries })) });
+  },
+
+  // Замеры запусков автоочереди: где тратится время (сеть архива, ожидание его лимита, прочее), повторы, кэш
+  'GET /admin/autoqueue/runs': async (db, _b, req) => {
+    await adminAuth(db, req);
+    const { results } = await db.prepare('SELECT * FROM autoqueue_runs ORDER BY t DESC LIMIT 500').all();
+    return json({ runs: results });
+  },
+
   // Статистика очереди (только владелец)
   'GET /admin/queue/stats': async (db, _b, req) => {
     await adminAuth(db, req);
@@ -488,6 +606,8 @@ const routes = {
   },
 };
 
+Object.assign(routes, syncRoutes({ auth, fail, json, sha, PUBLIC })); // синхронизация по ключу (п.15)
+
 export default {
   async fetch(req, env) {
     if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
@@ -500,5 +620,9 @@ export default {
     } catch (e) {
       return json({ error: e.message || String(e) }, e.status || 500);
     }
+  },
+  // Расписание Cloudflare (wrangler.toml [triggers]): один проход автоочереди
+  async scheduled(_event, env, ctx) {
+    ctx.waitUntil(runAutoQueue(env.DB, env).catch((e) => console.log('autoqueue:', e && e.message)));
   },
 };

@@ -11,3 +11,19 @@ database_id = "4b60c548-dc5c-4241-9614-c51352fcf9f7"
 # public/download/files/ кладёт build-installer.ps1 (в git не идёт).
 [assets]
 directory = "./public"
+
+# Автоочередь (1.3.91): сервер сам проверяет ники из очереди через архив.
+# AUTOQUEUE: off — выключено, test — результаты только в autoqueue_test (наружу не идут), publish — публикует новым никам.
+# publish — ТОЛЬКО по решению владельца после тестового прогона.
+[vars]
+AUTOQUEUE = "publish"
+AUTOQUEUE_PER_RUN = "2"
+# 1 — в тесте, когда очередь пуста, перепроверять старые вердикты (без публикации). Выключить: "0".
+AUTOQUEUE_RECHECK = "0"
+# Довірені (п.14): в общий слой — только голоса довірених; метка — от N разных аккаунтов, жалобы — от M.
+# Секрет для id аккаунтов — НЕ здесь: npx wrangler secret put TRUST_SECRET. Выключить проверку заявок: TRUST_ON = "0".
+TRUST_TAG_MIN = "3"
+TRUST_COMPLAINT_MIN = "3"
+
+[triggers]
+crons = ["*/5 * * * *"]

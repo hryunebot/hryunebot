@@ -532,10 +532,17 @@ function queueAction(v) { var c = queueConsent(v); return c === 'yes' ? 'send' :
 // ---------- вид значков (1.3.82) ----------
 // Сворачивать длинные метки в «значок + число»: mode 'always' | 'never' | 'auto' (по умолчанию — когда меток 3+).
 // labels — сколько меток у ника показываем (без нахрюкометра и значка «свій»).
-function badgesCompact(mode, labels) {
+function badgesCompact(mode, labels, narrow) {
   if (mode === 'always') return true;
   if (mode === 'never') return false;
-  return (labels || 0) >= 3;
+  // авто: при 3+ метках, а на телефоне / узком окне — всегда (13.11: на мобильном reddit ник урезался до «Respo…»)
+  return !!narrow || (labels || 0) >= 3;
+}
+// Число у метки правила — РЕАЛЬНЫЕ записи (посты + комменты). Вес поста ×3 — только в баллах (13.11: «×57» из 18 постов
+// и 3 комментов читали как «57 орков»). Для меток без разбивки — n как есть.
+function hitCount(h) {
+  var n = function (x) { var v = Math.floor(+x); return isFinite(v) && v > 0 ? v : 0; };
+  return h && h.posts != null && h.comments != null ? n(h.posts) + n(h.comments) : n(h && h.n);
 }
 // «Своим» нахрюкометр ниже 10% не показываем (владелец, 11.11): мелочь у активного участника tj — шум.
 var TRUST_HIDE_PCT = 10;
@@ -547,3 +554,127 @@ function meterHidden(pct, trusted) { return !!trusted && (pct || 0) < TRUST_HIDE
 // перекрывает. server — есть ли серверный вердикт (свежий или в памяти браузера по правилам srvPick); local — есть
 // своя законченная проверка. Возвращает 'server' | 'local' | 'none'.
 function hitsSource(server, local) { return server ? 'server' : local ? 'local' : 'none'; }
+
+// ---------- вердикт по данным архива (1.3.91): общий для check-tj и сервера (автоочередь) ----------
+// a — ответ archFull (background.js); home — «свои» сабы; nowMs — время проверки. Как autoHits в content.js.
+// raw — сабы и оценки по ним (не публикуются): при смене правил вердикт пересчитывается без нового скана.
+function archVerdict(a, home, nowMs) {
+  var now = nowMs || Date.now();
+  var sumv = function (o) { var t = 0; for (var k in o || {}) t += o[k] || 0; return t; };
+  var age = a.first > 0 ? (now / 1000 - a.first) / 86400 : 0;
+  var rec = { n: a.recent.n, cyr: a.recent.cyr, lat: a.recent.lat, cyrPosts: a.recent.cyrPosts, sleep: Math.round(a.sleep || 0) };
+  var fk = farmKarma(a.lk, a.ck, a.votes, a.votesP); // неизвестная карма — null
+  var farm = konsFarm(a.farm, fk.lk, fk.ck);
+  var tags = [];
+  var hv = homeVotes(a.votes, home);
+  var kv = konservaVerdict(age, rec, a, a.sleep || 0, farm, hv.hit);
+  if (kv === 'full') tags.push('kons'); else if (kv === 'weak') tags.push('kons?');
+  if (hv.hit) tags.push('homedown');
+  var rt = ruleVerdicts(a.subs, a.votes, home, a.subsP, a.votesP);
+  for (var i = 0; i < rt.tags.length; i++) tags.push(rt.tags[i]);
+  if (!tags.length) tags.push('clean');
+  var st = homeStats(a.votes, home, a.votesP, sumv(a.subs) - sumv(a.subsP));
+  var nn = function (x) { return x == null ? null : x; };
+  var ev = {
+    age: Math.round(age), sleep: Math.round(a.sleep || 0), lk: nn(a.lk), ck: nn(a.ck),
+    farm: a.farm ? { posts: a.farm.posts, burst: a.farm.burst, imgShort: a.farm.imgShort } : null,
+    old: { n: a.old.n, cyr: a.old.cyr, lat: a.old.lat, nsfw: a.old.nsfw },
+    rec: { n: rec.n, cyr: rec.cyr, lat: rec.lat, cyrPosts: rec.cyrPosts },
+    by: 'auto', // скриптовый/серверный вердикт, не ручной («автоперевірка Хрюнебота»)
+    home: { up: hv.up, down: hv.down, eUp: hv.eUp, eDown: hv.eDown, cUp: st.cUp, cDown: st.cDown, trunc: st.trunc },
+    ork: rt.ev.ork || { n: 0, up: 0, down: 0 }, clown: rt.ev.clown || null, watch: rt.ev.watch || null
+  };
+  return { tags: tags, ev: ev, raw: { subs: a.subs || {}, votes: a.votes || {}, subsP: a.subsP || {}, votesP: a.votesP || {} } };
+}
+
+// ---------- карточка ника человеческим языком (1.3.96: окно ника в расширении и Telegram-бот) ----------
+// Метки из серверного вердикта (tags + ev) — в том же виде, что и своя проверка расширения (раньше — srvHits в content.js).
+// opt — настройки показа: konsOn, konsPoints, konsWeakPoints, homeDownOn, clownOn (выключенное не возвращаем).
+// Любое значение с сервера/из памяти → неотрицательное целое (в разметку попадает только число)
+function num(x) { var n = Math.floor(+x); return isFinite(n) && n > 0 ? n : 0; }
+function hitsFromVerdict(v, opt) {
+  opt = opt || {};
+  if (!v || !v.tags) return [];
+  var ev = v.ev || {}, out = [];
+  var base = function () { return { srv: v, n: 1, where: [] }; };
+  for (var i = 0; i < v.tags.length; i++) {
+    var t = v.tags[i], h = base();
+    if (t === 'kons' || t === 'kons?') {
+      if (opt.konsOn === false) continue;
+      h.icon = '🥫'; h.tag = 'консерва'; h.kons = t === 'kons' ? 'full' : 'weak';
+      h.points = t === 'kons' ? (opt.konsPoints != null ? opt.konsPoints : 4) : (opt.konsWeakPoints != null ? opt.konsWeakPoints : 1);
+      out.push(h);
+    } else if (t === 'homedown' && opt.homeDownOn !== false) {
+      var hd = ev.home || { up: 0, down: 0, eUp: 0, eDown: 0 };
+      var hv = homeVotes({ a: { up: num(hd.up), down: num(hd.down) }, b: { up: num(hd.eUp), down: num(hd.eDown) } }, ['a']);
+      h.icon = '👎'; h.tag = 'минусуют'; h.homeDown = hv; h.n = num(hd.down); h.points = hv.contrast ? 2 : 1;
+      out.push(h);
+    } else if (parseRuleCode(t)) {
+      var pr = parseRuleCode(t), kind = pr.kind, o = ev[kind] || { n: 0 };
+      if (kind === 'clown' && opt.clownOn === false) continue;
+      var full = srvRuleFull(kind, num(o.n));
+      h.icon = RULE_KIND[kind].icon; h.tag = RULE_KIND[kind].tag; h.kind = kind; h.n = num(o.n); h.up = num(o.up); h.down = num(o.down);
+      h.posts = o.posts == null ? undefined : num(o.posts); h.comments = o.comments == null ? undefined : num(o.comments);
+      h.bySub = o.bySub && typeof o.bySub === 'object' ? o.bySub : null; h.verdict = pr.verdict;
+      h.points = ruleHitPoints(full, h.verdict, h.up, h.down);
+      out.push(h);
+    }
+  }
+  return out;
+}
+// «?» — метка с неуверенностью (оценки смешанные, «консерва?»)
+function hitUnsure(h) { return !!h && (h.verdict === 'unclear' || h.kons === 'weak'); }
+// Короткое имя метки для значка/заголовка: «👹 орк», «🥫 консерва», «👎 мінусують», «🥊 сперечальник 👹»
+function hitName(h) {
+  var name = function (tg) { return tg === 'слежу' ? T('слежу') : tg === 'клоун' ? T('клоун') : tg === 'орк' ? T('орк') : tg; };
+  if (h.trust) return T('свой');
+  if (h.acc) return '❗ ' + T('новорег');
+  if (h.kons) return '🥫 ' + T('консерва');
+  if (h.homeDown) return '👎 ' + T('минусуют тут');
+  if (h.hiddenP) return '🙈 ' + T('профиль скрыт');
+  if (h.verdict === 'debater') return '🥊 ' + T('спорщик') + (h.icon ? ' ' + h.icon : '');
+  return (h.icon || '🔍') + ' ' + name(h.tag);
+}
+// Почему метка: одна фраза человеческим языком, только числа (без дат активности и текстов). Возвращает строку.
+function hitWhy(h) {
+  var subs = function () {
+    if (h.bySub && typeof h.bySub === 'object') {
+      var a = [];
+      for (var s in h.bySub) if (+h.bySub[s] > 0) a.push('r/' + String(s).replace(/[^\w]/g, ''));
+      if (a.length) return a.join(', ');
+    }
+    return (h.where || []).map(function (w) { return 'r/' + w[0]; }).join(', ') || T('сабы правила');
+  };
+  var cnt = h.posts != null ? T('{p} и {c}', { p: N(h.posts || 0, 'пост|поста|постов'), c: N(h.comments || 0, 'коммент|коммента|комментов') }) : N(hitCount(h), 'запись|записи|записей');
+  if (h.trust) {
+    return h.trust.way === 'new'
+      ? T('В r/tjournal_refugees в плюсе {u} из {t} — активный участник', { u: h.trust.cUp, t: N(h.trust.cUp + h.trust.cDown, 'оценённого коммента|оценённых комментов|оценённых комментов') })
+      : T('В r/tjournal_refugees в плюсе {u} из {t} — активный участник', { u: h.trust.up, t: N(h.trust.up + h.trust.down, 'оценённой записи|оценённых записей|оценённых записей') });
+  }
+  if (h.acc) return T('Аккаунту {d}', { d: N(h.days, 'день|дня|дней') });
+  if (h.hiddenP) return T('Карма есть, а посты и комменты скрыты — так делают и обычные люди');
+  if (h.homeDown) {
+    var hd = h.homeDown;
+    return T('В TJ в минусе {d} из {t}', { d: hd.down, t: N(hd.up + hd.down, 'оценённой записи|оценённых записей|оценённых записей') }) +
+      (hd.contrast ? T(', а вне TJ в плюсе {u} из {e}', { u: hd.eUp, e: hd.eUp + hd.eDown }) : '');
+  }
+  if (h.kons) {
+    var ev = (h.srv && h.srv.ev) || {};
+    var sleep = h.sleep != null ? h.sleep : ev.sleep;
+    var lead = h.kons === 'weak' ? T('Возможно, «консерва» (купленный или долго лежавший аккаунт)') : T('Похоже на «консерву» (купленный или долго лежавший аккаунт)');
+    var why = sleep >= 180 ? T('молчал {s}, потом снова пишет', { s: N(sleep, 'день|дня|дней') })
+      : (h.farm && h.farm.hit) || (ev.farm && ev.farm.burst >= 4) ? T('похоже на ферму кармы')
+      : T('раньше писал по-английски, теперь — кириллицей');
+    return lead + ': ' + why;
+  }
+  if (h.verdict === 'debater') return T('Пишет в {s} ({c}), но там его минусуют (+{u}/−{d}) — спорит с ними', { s: subs(), c: cnt, u: h.up || 0, d: h.down || 0 });
+  if (h.verdict === 'unclear') return T('Пишет в {s} ({c}); оценки там смешанные или их мало (+{u}/−{d}) — поэтому с «?»', { s: subs(), c: cnt, u: h.up || 0, d: h.down || 0 });
+  return T('Пишет в {s} ({c}), и там его плюсуют (+{u}/−{d})', { s: subs(), c: cnt, u: h.up || 0, d: h.down || 0 });
+}
+// Источник метки для карточки: auto (автоматика) | owner (проверено владельцем) | own (ваша проверка в браузере)
+function hitSource(h) {
+  if (h && h.srv) return h.srv.ev && h.srv.ev.by === 'manual' ? 'owner' : 'auto';
+  return 'own';
+}
+// Сколько меток показывать у ника, остальное — под «+N» (раскрывается нажатием): на узком экране 1, иначе 2.
+function badgeLimit(mode, narrow) { return mode === 'never' ? 99 : narrow ? 1 : 2; }

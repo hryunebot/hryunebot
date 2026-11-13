@@ -22,7 +22,8 @@
   },
   "permissions": [
     "storage",
-    "unlimitedStorage"
+    "unlimitedStorage",
+    "alarms"
   ],
   "host_permissions": [
     "*://*.reddit.com/*",
@@ -33,6 +34,7 @@
     "scripts": [
       "i18n.js",
       "score.js",
+      "sync.js",
       "background.js"
     ]
   },

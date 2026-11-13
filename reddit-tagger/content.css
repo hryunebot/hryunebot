@@ -1,175 +1,166 @@
+/* ---------- значки у ника (1.3.96: компактно, без гирлянды) ----------
+   В одну строку и не переносятся: нахрюкометр + 1–2 главные метки, остальное — «+N» (раскрывается нажатием).
+   Высота значка меньше строки ника — комментарии не раздвигаются и не прыгают, когда метки появляются. */
 .rt-wrap {
   display: inline-flex;
   align-items: center;
-  /* не хватает места — переносим свои метки, а не ужимаем дату reddit */
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   min-width: 0;
   flex-shrink: 1;
-  row-gap: 2px;
   gap: 3px;
   margin: 0 4px;
   vertical-align: middle;
   cursor: pointer;
   line-height: 1;
+  border-radius: 6px;
+  outline-offset: 2px;
 }
+.rt-wrap.rt-open { flex-wrap: wrap; row-gap: 2px; }
+.rt-wrap .rt-extra { display: none; }
+.rt-wrap.rt-open .rt-extra { display: inline-flex; }
+.rt-wrap:focus-visible { outline: 2px solid #0090ff; }
 .rt-badge {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   font: 600 11px/16px system-ui, -apple-system, "Segoe UI", sans-serif;
-  padding: 0 7px;
+  padding: 0 6px;
   border-radius: 9px;
   white-space: nowrap;
   letter-spacing: 0;
   text-transform: none;
+  max-width: 14em;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.rt-shared {
-  background: transparent;
-  color: inherit;
-  border: 1px solid currentColor;
-  opacity: 0.75;
-  line-height: 14px;
-}
-.rt-auto {
-  background: transparent;
-  color: inherit;
-  border: 1px dashed currentColor;
-  opacity: 0.8;
-  line-height: 14px;
+.rt-shared { background: transparent; color: inherit; border: 1px solid currentColor; opacity: 0.8; line-height: 14px; }
+.rt-auto { background: transparent; color: inherit; border: 1px dashed currentColor; opacity: 0.85; line-height: 14px; }
+.rt-more { background: transparent; color: inherit; border: 1px solid currentColor; opacity: 0.6; line-height: 14px; min-width: 1.6em; justify-content: center; }
+.rt-more:hover { opacity: 1; }
+/* «?» — неуверенная метка: заметный жёлтый кружок, читается и на светлой, и на тёмной теме */
+.rt-q {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.15em; height: 1.15em; margin: 0 1px; border-radius: 50%;
+  background: #ffc53d; color: #1c1c1c; font-weight: 800; font-size: 0.85em; line-height: 1;
 }
 /* Спорщик: спорил с орками — свой, поэтому зелёный */
-.rt-debater {
-  color: #46a758;
-  border: 1px solid #46a758;
-  opacity: 1;
-}
+.rt-debater { color: #2f9e44; border: 1px solid #2f9e44; opacity: 1; }
 /* Красная 🥊 → зелёная: поворот оттенка (~350° → ~120°) */
-.rt-glove {
-  display: inline-block;
-  filter: hue-rotate(130deg) saturate(1.2);
-}
-.rt-add {
-  font-size: 11px;
-  opacity: 0.25;
-  transition: opacity 0.15s;
-  filter: grayscale(1);
-}
-.rt-add:hover, .rt-noted { opacity: 0.9; filter: none; }
+.rt-glove { display: inline-block; filter: hue-rotate(130deg) saturate(1.2); }
+.rt-badge.rt-add { padding: 0; background: none; border: none; font-size: 11px; opacity: 0.3; filter: grayscale(1); }
+.rt-badge.rt-add:hover, .rt-badge.rt-noted { opacity: 0.9; filter: none; }
+.rt-wrap:focus-visible .rt-add { opacity: 0.9; }
 
-.rt-pop {
-  --rt-bg: #ffffff;
-  --rt-fg: #1c1c1e;
-  --rt-mut: #6b6b73;
-  --rt-line: #e3e3e8;
-  --rt-field: #f4f4f6;
-  --rt-acc: #0090ff;
-  position: fixed;
-  z-index: 2147483647;
-  width: 290px;
-  box-sizing: border-box;
-  padding: 12px;
-  border-radius: 12px;
-  background: var(--rt-bg);
-  color: var(--rt-fg);
-  border: 1px solid var(--rt-line);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
-  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  text-align: left;
-}
-@media (prefers-color-scheme: dark) {
-  .rt-pop {
-    --rt-bg: #1d1f23;
-    --rt-fg: #eceef1;
-    --rt-mut: #9a9ca5;
-    --rt-line: #33363d;
-    --rt-field: #272a30;
-  }
-}
-.rt-pop * { box-sizing: border-box; }
-.rt-pop-h { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
-.rt-x { cursor: pointer; font-size: 20px; line-height: 1; color: var(--rt-mut); padding: 0 4px; }
-.rt-x:hover { color: var(--rt-fg); }
-.rt-cur { display: flex; flex-wrap: wrap; gap: 4px; min-height: 18px; }
-.rt-cur i { font-style: normal; cursor: pointer; opacity: 0.7; }
-.rt-cur i:hover { opacity: 1; }
-.rt-empty { color: var(--rt-mut); font-size: 12px; }
-.rt-pop .rt-in, .rt-pop .rt-note {
-  width: 100%;
-  padding: 6px 8px;
-  border-radius: 8px;
-  border: 1px solid var(--rt-line);
-  background: var(--rt-field);
-  color: var(--rt-fg);
-  font: inherit;
-  outline: none;
-  resize: vertical;
-}
-.rt-pop .rt-in:focus, .rt-pop .rt-note:focus { border-color: var(--rt-acc); }
-.rt-presets { display: flex; flex-wrap: wrap; gap: 4px; max-height: 110px; overflow-y: auto; }
-.rt-chip {
-  cursor: pointer;
-  font-size: 12px;
-  padding: 1px 8px;
-  border-radius: 9px;
-  border: 1px dashed var(--rt-line);
-  color: var(--rt-mut);
-}
-.rt-chip:hover { color: var(--rt-fg); border-color: var(--rt-mut); }
-.rt-colors { display: flex; gap: 6px; }
-.rt-sw { width: 18px; height: 18px; border-radius: 50%; cursor: pointer; outline-offset: 2px; }
-.rt-sw.on { outline: 2px solid var(--rt-fg); }
-.rt-stats { font-size: 11px; color: var(--rt-mut); }
-.rt-comp { display: flex; flex-direction: column; gap: 5px; padding-top: 8px; border-top: 1px solid var(--rt-line); }
-.rt-meterbar { height: 6px; border-radius: 3px; background: var(--rt-field); overflow: hidden; }
-.rt-meterbar span { display: block; height: 100%; border-radius: 3px; }
-.rt-complain { color: #e5484d; }
-.rt-complain.rt-undo { color: var(--rt-mut); }
-.rt-actions { display: flex; justify-content: space-between; }
-.rt-btn {
-  font: 600 12px system-ui, sans-serif;
-  padding: 6px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--rt-line);
-  background: var(--rt-field);
-  color: var(--rt-fg);
-  cursor: pointer;
-}
-.rt-save { background: var(--rt-acc); border-color: var(--rt-acc); color: #fff; }
-.rt-del { color: #e5484d; }
-
-/* Размер значков (настройка «Розмір значків»): s — как раньше, m — по умолчанию, l — крупно */
-html[data-rt-size="m"] .rt-badge { font-size: 13px; line-height: 19px; padding: 0 8px; border-radius: 10px; }
-html[data-rt-size="m"] .rt-auto, html[data-rt-size="m"] .rt-shared { line-height: 17px; }
-html[data-rt-size="m"] .rt-add { font-size: 13px; }
-html[data-rt-size="l"] .rt-badge { font-size: 15px; line-height: 22px; padding: 0 9px; border-radius: 12px; }
-html[data-rt-size="l"] .rt-auto, html[data-rt-size="l"] .rt-shared { line-height: 20px; }
-html[data-rt-size="l"] .rt-add { font-size: 15px; }
-
-/* Ссылка на историю юзера в rosint — в шапке окна метки */
-.rt-pop .rt-rosint { margin-left: auto; margin-right: 8px; font-size: 12px; color: var(--rt-acc); text-decoration: none; }
-.rt-pop .rt-rosint:hover { text-decoration: underline; }
-
-.rt-pop .rt-recheck { font-size: 12px; color: var(--rt-acc); text-decoration: none; }
-.rt-pop .rt-recheck:hover { text-decoration: underline; }
-
-/* Ручная оценка вердикта */
-.rt-pop .rt-review { font-size: 12px; display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
-.rt-pop .rt-rv { font: inherit; padding: 1px 6px; border-radius: 8px; border: 1px solid var(--rt-line); background: var(--rt-field); color: var(--rt-fg); cursor: pointer; }
-.rt-pop .rt-rv-on { border-color: var(--rt-acc); background: var(--rt-acc); color: #fff; }
-
-/* «свій» — давний и хорошо принятый в tj */
-/* зелёная текстовая плашка «свій» (1.3.83): одинаково читается на светлой и тёмной теме, размер — как у остальных меток */
 /* «свій» по умолчанию (1.3.90): тонкая зелёная вертикальная полоска сразу справа от ника, без текста */
 .rt-trust-bar { display: inline-block; width: 3px; height: 1em; background: #2f9e44; border-radius: 2px; vertical-align: -0.15em; margin: 0 3px 0 1px; flex: none; }
 .rt-trust { background: #2f9e44 !important; color: #fff !important; border: 1px solid #2f9e44 !important; opacity: 1 !important; font-weight: 700; }
 /* плашка-логотип TJ — для ветеранов оригинального TJournal (ручная выдача, WISHLIST п.10); пока нигде не выводится */
 .rt-tjvet .rt-tj { height: 1.05em; width: 2.75em; display: block; }
 
+/* Размер значков (настройка «Розмір значків»): s — маленький, m — по умолчанию, l — крупно */
+html[data-rt-size="m"] .rt-badge { font-size: 12px; line-height: 18px; padding: 0 7px; border-radius: 10px; }
+html[data-rt-size="m"] .rt-auto, html[data-rt-size="m"] .rt-shared, html[data-rt-size="m"] .rt-more { line-height: 16px; }
+html[data-rt-size="m"] .rt-badge.rt-add { font-size: 13px; padding: 0; }
+html[data-rt-size="l"] .rt-badge { font-size: 14px; line-height: 21px; padding: 0 9px; border-radius: 12px; }
+html[data-rt-size="l"] .rt-auto, html[data-rt-size="l"] .rt-shared, html[data-rt-size="l"] .rt-more { line-height: 19px; }
+html[data-rt-size="l"] .rt-badge.rt-add { font-size: 15px; padding: 0; }
+
 /* дата коммента reddit — всегда в одну строку (иначе при длинных метках «5h ago» ломается в столбик) */
 shreddit-comment faceplate-timeago, shreddit-comment time, shreddit-post faceplate-timeago, shreddit-post time { white-space: nowrap; }
+
+/* ---------- карточка ника ---------- */
+.rt-pop {
+  --rt-bg: #ffffff; --rt-fg: #1c1c1e; --rt-mut: #5f6068; --rt-line: #e3e3e8; --rt-field: #f4f4f6; --rt-acc: #0a7ad6;
+  --rt-ok: #2f9e44; --rt-warn: #a86400; --rt-err: #d93036;
+  position: fixed;
+  z-index: 2147483647;
+  width: 360px;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--rt-bg);
+  color: var(--rt-fg);
+  border: 1px solid var(--rt-line);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.28);
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.rt-pop.rt-dark { --rt-bg: #1d1f23; --rt-fg: #eceef1; --rt-mut: #a4a6ae; --rt-line: #363940; --rt-field: #272a30; --rt-acc: #4aa8ff; --rt-ok: #5cc26f; --rt-warn: #f0b44a; --rt-err: #ff7a7f; }
+@media (prefers-color-scheme: dark) {
+  .rt-pop:not(.rt-light) { --rt-bg: #1d1f23; --rt-fg: #eceef1; --rt-mut: #a4a6ae; --rt-line: #363940; --rt-field: #272a30; --rt-acc: #4aa8ff; --rt-ok: #5cc26f; --rt-warn: #f0b44a; --rt-err: #ff7a7f; }
+}
+.rt-pop * { box-sizing: border-box; }
+.rt-pop :focus-visible { outline: 2px solid var(--rt-acc); outline-offset: 2px; }
+.rt-pop button { font: inherit; }
+.rt-pop-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.rt-pop .rt-nick { font-size: 15px; font-weight: 700; color: var(--rt-fg); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.rt-pop .rt-nick:hover { text-decoration: underline; }
+.rt-x { cursor: pointer; font-size: 20px; line-height: 1; color: var(--rt-mut); background: none; border: none; padding: 2px 6px; border-radius: 6px; flex: none; }
+.rt-x:hover { color: var(--rt-fg); background: var(--rt-field); }
+.rt-pop .rt-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.rt-pop .rt-chips .rt-badge { font-size: 12px; line-height: 20px; padding: 0 8px; max-width: none; }
+.rt-pop .rt-chips .rt-auto, .rt-pop .rt-chips .rt-shared { line-height: 18px; }
+.rt-pop .rt-sub { font-size: 12px; color: var(--rt-mut); margin-top: 4px; }
+.rt-pop .rt-facts { font-size: 12px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.rt-pop .rt-why { display: flex; flex-direction: column; gap: 6px; }
+.rt-pop .rt-line { display: flex; gap: 8px; align-items: flex-start; }
+.rt-pop .rt-ico { flex: none; width: 1.4em; text-align: center; }
+.rt-pop .rt-src { font-size: 11px; color: var(--rt-mut); margin-top: 1px; }
+.rt-pop .rt-src1 { padding-left: calc(1.4em + 8px); }
+.rt-pop .rt-state.rt-err, .rt-pop .rt-state.rt-warn { color: var(--rt-warn); }
+.rt-pop .rt-state.rt-err { color: var(--rt-err); }
+.rt-pop .rt-state.rt-load, .rt-pop .rt-state.rt-wait, .rt-pop .rt-state.rt-none { color: var(--rt-mut); }
+.rt-pop .rt-clean { color: var(--rt-ok); }
+.rt-pop .rt-sec { display: flex; flex-direction: column; gap: 6px; padding-top: 9px; border-top: 1px solid var(--rt-line); }
+.rt-pop .rt-h { font-weight: 700; font-size: 12px; }
+.rt-pop .rt-hint { font-weight: 400; color: var(--rt-mut); }
+.rt-pop .rt-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.rt-pop .rt-mytags { display: flex; flex-wrap: wrap; gap: 5px; }
+.rt-pop .rt-chip {
+  cursor: pointer; font-size: 12px; padding: 3px 10px; border-radius: 12px;
+  border: 1px dashed var(--rt-mut); color: var(--rt-fg); background: transparent;
+}
+.rt-pop .rt-chip:hover { border-style: solid; }
+.rt-pop .rt-chip.rt-on { border-style: solid; font-weight: 700; }
+.rt-pop .rt-in, .rt-pop .rt-note {
+  padding: 6px 8px; border-radius: 8px; border: 1px solid var(--rt-line);
+  background: var(--rt-field); color: var(--rt-fg); font: inherit; outline: none;
+}
+.rt-pop .rt-in { flex: 1 1 120px; min-width: 0; }
+.rt-pop .rt-note { width: 100%; resize: vertical; }
+.rt-pop .rt-in:focus, .rt-pop .rt-note:focus { border-color: var(--rt-acc); }
+.rt-pop .rt-colors { display: flex; gap: 6px; flex-wrap: wrap; }
+.rt-pop .rt-sw { width: 20px; height: 20px; border-radius: 50%; cursor: pointer; border: none; padding: 0; outline-offset: 2px; }
+.rt-pop .rt-sw.rt-on { outline: 2px solid var(--rt-fg); }
+.rt-pop .rt-btn {
+  font-weight: 600; font-size: 12px; padding: 6px 12px; border-radius: 8px;
+  border: 1px solid var(--rt-line); background: var(--rt-field); color: var(--rt-fg); cursor: pointer;
+}
+.rt-pop .rt-btn:hover { border-color: var(--rt-mut); }
+.rt-pop .rt-btn:disabled { opacity: 0.6; cursor: default; }
+.rt-pop .rt-complain { color: var(--rt-err); }
+.rt-pop .rt-complain.rt-undo { color: var(--rt-fg); }
+.rt-pop .rt-review { display: flex; gap: 5px; flex-wrap: wrap; }
+.rt-pop .rt-rv { padding: 3px 10px; border-radius: 12px; border: 1px solid var(--rt-line); background: var(--rt-field); color: var(--rt-fg); cursor: pointer; font-size: 12px; }
+.rt-pop .rt-rv.rt-on { border-color: var(--rt-acc); background: var(--rt-acc); color: #fff; font-weight: 700; }
+.rt-pop .rt-st { font-size: 12px; min-height: 0; }
+.rt-pop .rt-st:empty { display: none; }
+.rt-pop .rt-st.rt-ok { color: var(--rt-ok); }
+.rt-pop .rt-st.rt-warn { color: var(--rt-warn); }
+.rt-pop .rt-st.rt-err { color: var(--rt-err); }
+.rt-pop .rt-st.rt-busy { color: var(--rt-mut); }
+.rt-pop .rt-link { background: none; border: none; padding: 0; color: var(--rt-acc); cursor: pointer; font-size: 12px; text-decoration: none; }
+.rt-pop .rt-link:hover { text-decoration: underline; }
+.rt-pop .rt-more-d { border-top: 1px solid var(--rt-line); padding-top: 8px; }
+.rt-pop .rt-more-d summary { cursor: pointer; color: var(--rt-mut); font-size: 12px; }
+.rt-pop .rt-details { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.rt-pop .rt-stats { font-size: 11px; color: var(--rt-mut); }
+.rt-pop .rt-links { gap: 14px; }
 
 /* вопрос о согласии на отправку в очередь владельцу (1.3.80) */
 .rt-consent { position: fixed; right: 16px; bottom: 16px; z-index: 2147483000; max-width: 360px; padding: 12px 14px; border-radius: 12px;
@@ -184,20 +175,23 @@ shreddit-comment faceplate-timeago, shreddit-comment time, shreddit-post facepla
   .rt-consent-row button { background: #2a2d30; color: #e8e8e8; border-color: #444; }
 }
 
-/* ---------- телефон / сенсорный экран (1.3.84, Firefox Android) ----------
-   Наведения нет — подробности открываются нажатием на плашку (окно ника). Окно — по ширине экрана, с прокруткой;
-   кнопки и метки крупнее, чтобы попадать пальцем. На ПК (мышь) ничего не меняется. */
+/* ---------- телефон / сенсорный экран (Firefox Android) ----------
+   Наведения нет — всё открывается нажатием. Карточка — по ширине экрана, по центру, с прокруткой; цели — под палец
+   (не меньше ~40 px), поля 16px — чтобы телефон не увеличивал страницу при вводе. */
 @media (pointer: coarse) {
-  .rt-pop { width: min(340px, calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
-  .rt-pop .rt-btn { min-height: 40px; padding: 8px 14px; font-size: 14px; }
-  .rt-pop .rt-chip { display: inline-flex; align-items: center; min-height: 32px; padding: 4px 10px; }
-  .rt-pop .rt-sw { width: 26px; height: 26px; }
-  .rt-pop .rt-x { font-size: 26px; padding: 4px 10px; }
-  .rt-pop .rt-rv { min-height: 34px; min-width: 40px; }
-  .rt-pop .rt-recheck, .rt-pop .rt-rosint { display: inline-block; padding: 6px 0; }
-  .rt-pop .rt-in, .rt-pop .rt-note { font-size: 16px; } /* 16px — чтобы телефон не увеличивал страницу при вводе */
-  .rt-wrap { row-gap: 3px; }
+  .rt-pop { width: min(400px, calc(100vw - 16px)); max-height: calc(100vh - 16px); font-size: 15px; -webkit-overflow-scrolling: touch; }
+  .rt-pop .rt-btn { min-height: 42px; padding: 8px 14px; font-size: 15px; }
+  .rt-pop .rt-chip { min-height: 38px; padding: 6px 14px; font-size: 15px; display: inline-flex; align-items: center; }
+  .rt-pop .rt-rv { min-height: 40px; padding: 6px 14px; font-size: 15px; }
+  .rt-pop .rt-sw { width: 28px; height: 28px; }
+  .rt-pop .rt-colors { gap: 6px; flex-wrap: nowrap; }
+  .rt-pop .rt-x { font-size: 28px; min-width: 44px; min-height: 44px; }
+  .rt-pop .rt-link { display: inline-block; padding: 8px 0; font-size: 14px; }
+  .rt-pop .rt-more-d summary { padding: 8px 0; font-size: 14px; }
+  .rt-pop .rt-in, .rt-pop .rt-note { font-size: 16px; min-height: 42px; }
+  .rt-pop .rt-h, .rt-pop .rt-st, .rt-pop .rt-src { font-size: 13px; }
   .rt-badge { cursor: pointer; }
+  .rt-more { min-width: 2em; }
   .rt-consent { left: 8px; right: 8px; bottom: 8px; max-width: none; }
   .rt-consent-row button { min-height: 40px; padding: 8px 18px; font-size: 15px; }
 }

@@ -1,6 +1,6 @@
 // Chrome: фон — service worker, i18n.js подключаем сами.
 // Firefox: фон — обычные скрипты, i18n.js уже подключён манифестом (importScripts там нет).
-if (typeof T === 'undefined' && typeof importScripts === 'function') importScripts('i18n.js', 'score.js');
+if (typeof T === 'undefined' && typeof importScripts === 'function') importScripts('i18n.js', 'score.js', 'sync.js');
 
 async function syncLang() {
   try { const { rt_settings: s = {} } = await chrome.storage.local.get('rt_settings'); setLang(s.lang); } catch { /* по умолчанию uk */ }
@@ -68,9 +68,10 @@ async function adminApi({ path, body }) {
 // ---------- общий слой ----------
 let joining = null;
 
-async function pubToken(forceNew) {
+// any: токен нужен не для голосов, а для синхронизации (п.15) — она работает и при выключенном общем слое
+async function pubToken(forceNew, any) {
   const { rt_pub: p = {}, rt_settings: s = {} } = await chrome.storage.local.get(['rt_pub', 'rt_settings']);
-  if (s.pubOn === false) throw new Error(T('Общие жалобы выключены'));
+  if (s.pubOn === false && !any) throw new Error(T('Общие жалобы выключены'));
   if (p.token && !forceNew) return p.token;
   // Один вход на все вкладки сразу.
   joining ??= request(DEFAULT_SERVER, '/join', { code: 'public' })
@@ -120,6 +121,33 @@ chrome.runtime.onMessage.addListener((msg, _sender, send) => {
   return true;
 });
 
+// Полнота ответа архива — по ТИПУ запроса (13.11, ГПТ: «200 и массив объектов полноту не подтверждают»).
+// Ответ должен соответствовать именно этому запросу: 200, без поля error, список data не длиннее limit; у постов и
+// комментов — дата (число) и саб (строка), даты внутри запрошенного окна after/before, порядок — как в sort;
+// у профиля (users/search) — автор (строка). Иначе — неуспех: повтор, а не данные для вердикта и не кэш.
+function archOk(url, ok, j) {
+  if (!ok || !j || typeof j !== 'object' || j.error || !Array.isArray(j.data)) return false;
+  let q;
+  try { q = new URL(url).searchParams; } catch { return false; }
+  const limit = +q.get('limit') || 100;
+  if (j.data.length > limit) return false;
+  const isUsers = /\/users\/search/.test(url);
+  const after = +q.get('after') || 0, before = +q.get('before') || 0, sort = q.get('sort') || 'desc';
+  const needSub = (q.get('fields') || '').split(',').indexOf('subreddit') >= 0;
+  let prev = null;
+  for (const x of j.data) {
+    if (!x || typeof x !== 'object') return false;
+    if (isUsers) { if (typeof x.author !== 'string') return false; continue; }
+    const t = x.created_utc;
+    if (typeof t !== 'number' || !(t > 0)) return false;
+    if ((after && t < after) || (before && t > before)) return false;
+    if (needSub && typeof x.subreddit !== 'string') return false;
+    if (prev !== null && (sort === 'asc' ? t < prev : t > prev)) return false;
+    prev = t;
+  }
+  return true;
+}
+
 const POST_FIELDS = 'subreddit,over_18,title,selftext,created_utc,score,url';
 const COMMENT_FIELDS = 'subreddit,body,created_utc,score';
 
@@ -128,10 +156,13 @@ const COMMENT_FIELDS = 'subreddit,body,created_utc,score';
 const ARCH_WAIT = [3000, 8000, 15000];
 // Общий «шлагбаум» к архиву. В браузере его нет (no-op). Скрипт массовой проверки (tools/check-tj.mjs) подставляет
 // archGate: общий на все окна лимит одновременных запросов и общая пауза после «slow down».
+// archFetchImpl — подмена запроса (1.3.91): сервер подставляет кэш успешных ответов в D1, чтобы при частичной ошибке
+// повторять только упавший запрос. В браузере и check-tj его нет — обычный fetch.
 async function archFetch(url) {
   const gate = typeof archGate === 'object' && archGate ? archGate : null;
+  const f = typeof archFetchImpl === 'function' ? archFetchImpl : fetch;
   if (gate) await gate.acquire();
-  try { return await fetch(url, { signal: AbortSignal.timeout(20000) }); } finally { if (gate) gate.release(); }
+  try { return await f(url, { signal: AbortSignal.timeout(20000) }); } finally { if (gate) gate.release(); }
 }
 
 async function archGet(kind, user, range, fields) {
@@ -145,7 +176,8 @@ async function archGet(kind, user, range, fields) {
       j = await r.json().catch(() => ({}));
     } catch (e) { r = { ok: false, status: 0 }; j = { error: e.name === 'TimeoutError' ? 'timeout' : 'network' }; }
     const gate = typeof archGate === 'object' && archGate ? archGate : null;
-    if (r.ok && Array.isArray(j.data)) { if (gate) gate.ok(); j.data.trunc = j.data.length >= limit; return j.data; }
+    // успех — только полный ответ: 200, список data и БЕЗ поля error (200 + error = частичный ответ архива, повторяем)
+    if (archOk(u, r.ok, j)) { if (gate) gate.ok(); j.data.trunc = j.data.length >= limit; return j.data; }
     why = (kind + ': ' + (j.error || 'HTTP ' + r.status)).slice(0, 80);
     // Архив говорит, когда сбросится его лимит (x-ratelimit-reset-at) — ждём ровно до этого момента (не дольше минуты),
     // иначе — нарастающие паузы.
@@ -173,7 +205,7 @@ async function archOne(kind, user, range, sort) {
   for (let i = 0; i <= ARCH_WAIT.length; i++) {
     let r, j;
     try { r = await archFetch(u); j = await r.json().catch(() => ({})); } catch { r = { ok: false, status: 0 }; j = {}; }
-    if (r.ok && Array.isArray(j.data)) return j.data.length ? j.data[0].created_utc : 0;
+    if (archOk(u, r.ok, j)) return j.data.length ? j.data[0].created_utc : 0;
     const at = r.headers && +r.headers.get('x-ratelimit-reset-at');
     const gate = typeof archGate === 'object' && archGate ? archGate : null;
     if (gate && r.status === 429) gate.block(at > Date.now() ? at : 0);
@@ -184,7 +216,9 @@ async function archOne(kind, user, range, sort) {
 const PROBE_DAY = 86400, PROBE_WIN = 90 * PROBE_DAY, PROBE_N = 6;
 async function gapProbe(user, coverFrom, created) {
   if (!/^[A-Za-z0-9_-]{1,32}$/.test(user)) throw new Error('bad user');
-  const now = Math.floor(Date.now() / 1000);
+  // «сейчас» — с точностью до часа: адреса запросов не меняются каждую секунду (кэш ответов на сервере попадает
+  // при повторе); перерывы считаются в днях — час на них не влияет
+  const now = Math.floor(Date.now() / 1000 / 3600) * 3600;
   let best = 0, span = 0, gapFrom = 0, gapTo = 0;
   for (let k = 0; k < PROBE_N; k++) {
     const end = now - k * PROBE_WIN, start = end - PROBE_WIN;
@@ -291,9 +325,28 @@ async function archStats(user, split, created) {
 async function archFull(user, split) {
   if (!/^[A-Za-z0-9_-]{1,32}$/.test(user) || !split) throw new Error('bad user');
   let first = 0, karma = null, lk = null, ck = null; // null — архив карму не знает (у многих ников её там нет)
-  try {
-    const r = await archFetch(`${ARCH}/users/search?author=${encodeURIComponent(user)}&limit=5`);
-    const j = await r.json().catch(() => ({}));
+  // Профиль (карма, возраст). «Такого профиля в архиве нет» (пустой список) — нормально, считаем без него.
+  // Но СБОЙ запроса (ошибка, тайм-аут, 429 после повторов) — не «нет профиля»: без кармы не видна ферма, и
+  // «консерва» превращалась в «чисто» (пример — тест сервера 12.11). Такой сбой — ошибка всей проверки.
+  let j = null, why = '';
+  for (let i = 0; i <= ARCH_WAIT.length && !j; i++) {
+    let r = null;
+    const pu = `${ARCH}/users/search?author=${encodeURIComponent(user)}&limit=5`;
+    try { r = await archFetch(pu); } catch (e) { why = 'profile: ' + (e.name === 'TimeoutError' ? 'timeout' : 'network'); }
+    if (r) {
+      const x = await r.json().catch(() => null);
+      if (archOk(pu, r.ok, x)) j = x;
+      else {
+        why = 'profile: ' + ((x && x.error) || 'HTTP ' + r.status);
+        const at = r.headers && +r.headers.get('x-ratelimit-reset-at');
+        const gate = typeof archGate === 'object' && archGate ? archGate : null;
+        if (gate && r.status === 429) { gate.block(at > Date.now() ? at : 0); continue; }
+      }
+    }
+    if (!j && i < ARCH_WAIT.length) await new Promise((ok) => setTimeout(ok, ARCH_WAIT[i]));
+  }
+  if (!j) throw new Error(String(why || 'profile: no answer').slice(0, 80));
+  {
     const u = (j.data || []).find((x) => String(x.author || '').toLowerCase() === user.toLowerCase());
     const m = u && u._meta;
     if (m) {
@@ -303,7 +356,7 @@ async function archFull(user, split) {
       // У части ников архив отдаёт нули вместо кармы — это «неизвестно», а не «0 кармы».
       if (m.post_karma || m.comment_karma) { lk = m.post_karma || 0; ck = m.comment_karma || 0; }
     }
-  } catch { /* без профиля — возраст неизвестен */ }
+  }
   // (пауза не нужна — см. archGet)
   const st = await archStats(user, split, 0);
   // Профиля в архиве нет — возраст по самому старому посту/комменту, что мы видим (аккаунт не моложе).
@@ -343,3 +396,9 @@ chrome.runtime.onMessage.addListener((msg) => {
     .then((m) => { if (m && m.version && m.version !== chrome.runtime.getManifest().version) chrome.runtime.reload(); })
     .catch(() => { /* не смогли прочитать — не трогаем */ });
 });
+
+// Синхронизация своих данных по ключу (п.15): sync.js. На сервере (check.gen.js) HryuSync нет — пропускаем.
+// Синхронизации нужен только токен установки (не голоса): работает и с выключенным общим слоем. Токен не теряем:
+// новый токен = новое устройство, его пришлось бы подключать заново.
+async function syncApi({ path, body }) { return request(DEFAULT_SERVER, path, body, await pubToken(false, true)); }
+if (typeof HryuSync !== 'undefined' && chrome.alarms) HryuSync.start({ syncApi, api });

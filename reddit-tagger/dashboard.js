@@ -27,6 +27,7 @@ const DEFAULT_SET = {
   konsWeakPoints: 1,
   pubOn: true,
   helpQueue: null, // помогать пополнять базу: null — ещё не спрашивали (вопрос на reddit), true/false — ответ
+  welcomed: false, // первый экран «как это работает» уже закрыли (1.3.96)
   halfAt: 7, // сколько нахрюков (разных людей) дают 50% на шкале
   lang: 'uk', // основной язык украинский, можно переключить на русский
 };
@@ -95,22 +96,47 @@ async function load() {
   renderConsent();
 }
 
-// Вопрос «Допомагати поповнювати базу Хрюнебота?» — сразу при установке (фон открывает эту страницу) и пока нет ответа.
-// До ответа расширение ничего в очередь не отправляет (queueAction в score.js). Ответ меняется галочкой в настройках.
+// ---------- первый запуск и согласие (1.3.96) ----------
+// Коротко: где появляются метки и что делать нажатием; сразу — попробовать на Reddit. Вопрос про очередь ников —
+// понятно, что уходит и зачем; текущий выбор виден и меняется здесь же. Доверие и синхронизация — позже, в настройках.
+const CONTACT = 'https://github.com/hryunebot/hryunebot/issues'; // связаться с владельцем (без личных контактов)
+const TRY_URL = 'https://www.reddit.com/r/tjournal_refugees/';
+function consentText() {
+  return T('Хрюнебот сам проверяет историю ников, которых ещё нет в общей базе. Если вы согласны, после такой проверки он отправит владельцу ник и короткий итог (коды меток и цифры). Владелец перепроверит ник и добавит в общую базу — другие пользователи увидят результат сразу. Не отправляются: ваш ник, куки, токены, тексты комментариев.');
+}
+function consentChoice() {
+  const c = queueConsent(settings.helpQueue);
+  return c === 'ask' ? T('Вы ещё не ответили — пока ничего не отправляется.') : c === 'yes' ? T('Сейчас: да, отправлять.') : T('Сейчас: нет, не отправлять.');
+}
 function renderConsent() {
   const box = $('#consentBox');
   if (!box) return;
-  if (queueConsent(settings.helpQueue) !== 'ask') { box.style.display = 'none'; box.textContent = ''; return; }
+  const welcome = settings.welcomed !== true && !Object.keys(users).length;
+  const ask = queueConsent(settings.helpQueue) === 'ask';
+  if (!welcome && !ask) { box.style.display = 'none'; box.textContent = ''; return; }
   box.style.display = '';
-  box.innerHTML = `<b style="font-size:16px">${esc(T('Помогать пополнять базу Хрюнебота?'))}</b>
-    <div class="mut" style="margin:8px 0 12px">${esc(T('Хрюнебот будет отправлять владельцу ники пользователей reddit, которых проверил сам, и предварительные результаты проверки. Не отправляются: куки, токены, тексты комментариев. Публикует владелец только после своей проверки. Изменить можно в настройках.'))}</div>
-    <div class="row" style="display:flex;gap:10px">
-      <button class="btn pri" id="consentYes" style="min-height:40px;padding:8px 22px">${esc(T('Да'))}</button>
-      <button class="btn" id="consentNo" style="min-height:40px;padding:8px 22px">${esc(T('Нет'))}</button>
-    </div>`;
-  const answer = (v) => { settings.helpQueue = v; saveSettings(); renderConsent(); render(); };
+  const ex = `<span class="badge" style="background:#ffc53d;color:#111">🐽 34%</span><span class="badge out">👹<span class="q">?</span>×12</span><span class="badge out">+2</span>`;
+  box.innerHTML = (welcome ? `<h2 style="margin:0 0 8px">${T('Хрюнебот готов 🐽')}</h2>
+      <ol class="steps-intro">
+        <li>${T('На Reddit рядом с никами появляются метки, например:')} <span class="ex">${ex}</span></li>
+        <li>${T('🐽 — нахрюкометр: оценка по правилам Хрюнебота, а не факт. «?» — метка с сомнением. «+2» — ещё метки, раскрываются нажатием.')}</li>
+        <li>${T('Нажмите на метки или 🏷 рядом с ником — откроется карточка: почему такие метки, ваши метки, заметка, жалоба.')}</li>
+      </ol>
+      <div class="row" style="gap:10px;margin:10px 0 4px"><a class="btn pri" href="${TRY_URL}" target="_blank" rel="noopener">${T('Попробовать на Reddit →')}</a>
+        <button class="btn" id="welcomeOk">${T('Понятно, скрыть')}</button></div>
+      <div class="mut">${T('Доверенный пользователь и синхронизация между устройствами — в «Настройках», когда понадобятся.')}</div>` : '')
+    + `<div class="consent ${welcome ? 'in' : ''}"><b>${T('Помогать пополнять общую базу?')}</b>
+      <div class="mut" style="margin:6px 0 8px">${consentText()}</div>
+      <div class="row" style="gap:10px;align-items:center">
+        <button class="btn ${settings.helpQueue === true ? 'pri' : ''}" id="consentYes" aria-pressed="${settings.helpQueue === true}">${T('Да, помогать')}</button>
+        <button class="btn ${settings.helpQueue === false ? 'pri' : ''}" id="consentNo" aria-pressed="${settings.helpQueue === false}">${T('Нет')}</button>
+        <span class="mut" id="consentNow">${consentChoice()}</span></div>
+      <div class="mut" style="margin-top:6px">${T('Поменять можно в любой момент: Настройки → Общие оценки и участие.')}</div></div>`;
+  const answer = (v) => { settings.helpQueue = v; saveSettings(); };
   $('#consentYes').onclick = () => answer(true);
   $('#consentNo').onclick = () => answer(false);
+  const ok = $('#welcomeOk');
+  if (ok) ok.onclick = () => { settings.welcomed = true; if (settings.helpQueue === null) settings.helpQueue = false; saveSettings(); };
 }
 
 // В Firefox пользователь может отключить расширению доступ к reddit — тогда метки не появятся.
@@ -131,7 +157,10 @@ async function checkRedditAccess() {
   };
 }
 const saveUsers = () => chrome.storage.local.set({ [K_USERS]: users });
-const saveSettings = () => chrome.storage.local.set({ [K_SET]: settings });
+// Своя запись настроек не перерисовывает страницу целиком (иначе пропадает «✓ Сохранено» и открытые разделы);
+// перерисовка — только если сменили язык.
+let selfSetUntil = 0;
+const saveSettings = () => { selfSetUntil = Date.now() + 1500; return chrome.storage.local.set({ [K_SET]: settings }); };
 
 // Надписи в самом HTML (вкладки, диалог) помечены data-t / data-tp.
 function translateStatic() {
@@ -151,6 +180,16 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   const keys = Object.keys(changes);
   if (keys.length === 1 && keys[0] === 'rt_hist') return;
+  // служебные записи синхронизации — обновляем только её блок, не всю страницу (иначе слетают несохранённые поля)
+  if (keys.every((k) => k === 'rt_sync' || k === 'rt_sync_lost' || k === 'rt_hist')) { renderSyncBox(); return; }
+  if (keys.length === 1 && keys[0] === K_SET && Date.now() < selfSetUntil && (changes[K_SET].newValue || {}).lang === LANG) {
+    renderConsent();
+    const c2 = document.getElementById('consentNow2');
+    if (c2) c2.textContent = consentChoice();
+    const hq = document.getElementById('helpQueue');
+    if (hq) hq.checked = settings.helpQueue === true;
+    return;
+  }
   load();
 });
 
@@ -304,7 +343,7 @@ function renderGroup() {
       <tbody>${s.users.map((u) => `<tr>
         <td><a href="https://www.reddit.com/user/${esc(u.name)}/" target="_blank">u/${esc(u.name)}</a></td>
         <td>${meter(u.complainers, u.complaints)}</td>
-        <td>${u.complaints ? `${u.complaints} <span class="mut">${T('от {n} чел.', { n: u.complainers })}</span>` : '<span class="mut">—</span>'}</td>
+        <td>${u.complaints ? `${u.complaints} <span class="mut">${T('от {n}', { n: N(u.complainers, 'человека|человек|человек') })}</span>` : '<span class="mut">—</span>'}</td>
         <td>${Object.entries(u.tags).sort((a, b) => b[1] - a[1]).map(([t, c]) => badge(`${t} ×${c}`, colorOf(t))).join('') || '<span class="mut">—</span>'}</td>
         <td>${Object.entries(u.subs).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([sub, n]) => `<span class="chip">r/${esc(sub)} · ${n}</span>`).join('') || '<span class="mut">—</span>'}</td>
         <td class="num">${u.total}</td>
@@ -560,6 +599,195 @@ async function fetchAdmin() {
   if (tab === 'complaints') renderComplaints();
 }
 
+// ---------- довірені користувачі (п.14) ----------
+// ---------- синхронизация между устройствами (п.15) ----------
+const syncMsg = (op, extra = {}) => new Promise((res, rej) => chrome.runtime.sendMessage({ type: 'sync', op, ...extra }, (r) => {
+  if (chrome.runtime.lastError) return rej(new Error(chrome.runtime.lastError.message));
+  if (!r || !r.ok) return rej(new Error((r && r.error) || '?'));
+  res(r.data);
+}));
+// Ключ показывается ОДИН раз — держим его на экране, пока человек сам не нажмёт «Я сохранил ключ» (перерисовки не стирают)
+let syncShownKey = null, syncGen = 0, syncAttachOpen = false, syncNote = null;
+const copyBtn = (id, label) => `<button class="btn" id="${id}">${label || T('Копировать')}</button>`;
+async function copyText(text, btn) {
+  try { await navigator.clipboard.writeText(text); if (btn) { const o = btn.textContent; btn.textContent = T('✓ Скопировано'); setTimeout(() => { btn.textContent = o; }, 1500); } }
+  catch { if (btn) btn.textContent = T('Выделите и скопируйте вручную'); }
+}
+async function renderSyncBox(shownKey) {
+  if (shownKey) syncShownKey = shownKey;
+  shownKey = syncShownKey;
+  const box = document.querySelector('#syncBox');
+  if (!box) return;
+  const gen = ++syncGen, stale = () => gen !== syncGen || !box.isConnected; // рисует только последний вызов
+  const $ = (q) => box.querySelector(q);
+  const intro = `<div class="mut">${T('Ваши метки, заметки, оценки ✔/✖/?, список своих жалоб и настройки — одинаковые на компьютере и телефоне. Сервер хранит их только в зашифрованном виде; подключённые устройства расшифровывают их у себя. Ключ на сервер не передаётся — ни сервер, ни владелец Хрюнебота ваших данных не прочитают. Работает и без общего слоя.')}</div>`;
+  let st;
+  try { st = await syncMsg('status'); } catch (e) { if (stale()) return; box.innerHTML = intro + `<div class="err">${esc(T(e.message))}</div>`; return; }
+  if (stale()) return;
+  const note = syncNote ? `<div class="${syncNote.kind === 'err' ? 'err' : 'okc'}" style="margin-top:6px">${esc(syncNote.text)}</div>` : '';
+  if (!st.on) {
+    box.innerHTML = intro + `<div class="row" style="gap:10px;margin-top:10px">
+        <button class="btn pri" id="syCreate">${T('Создать ключ')}</button>
+        <button class="btn" id="syAttachOpen" aria-expanded="${syncAttachOpen}">${T('Подключить устройство')}</button></div>
+      <div class="mut" style="margin-top:6px">${T('«Создать ключ» — на первом устройстве. «Подключить устройство» — на остальных: введите ключ с первого.')}</div>
+      ${syncAttachOpen ? `<div class="row" style="gap:8px;margin-top:8px">
+        <input id="syKey" placeholder="HRYU-…" style="width:340px;max-width:100%" autocomplete="off" spellcheck="false" aria-label="${T('Ключ синхронизации')}">
+        <button class="btn pri" id="syAttach">${T('Подключить')}</button></div>` : ''}${note}`;
+    $('#syCreate').onclick = async (e) => {
+      e.target.disabled = true; syncNote = { kind: 'busy', text: T('Создаю ключ…') };
+      try { const r = await syncMsg('create'); syncNote = null; renderSyncBox(r.key); } catch (er) { syncNote = { kind: 'err', text: T('Не получилось: {e}', { e: T(er.message) }) }; renderSyncBox(); }
+    };
+    $('#syAttachOpen').onclick = () => { syncAttachOpen = !syncAttachOpen; renderSyncBox(); setTimeout(() => { const i = document.querySelector('#syKey'); if (i) i.focus(); }, 50); };
+    const att = $('#syAttach');
+    if (att) {
+      const go = async () => {
+        const key = $('#syKey').value.trim();
+        if (!key) return;
+        att.disabled = true; att.textContent = T('Подключаю…');
+        try { await syncMsg('attach', { key }); syncAttachOpen = false; syncNote = { kind: 'ok', text: T('✓ Устройство подключено, данные подтянуты') }; renderSyncBox(); }
+        catch (er) { att.disabled = false; att.textContent = T('Подключить'); const n = box.querySelector('.err') || box.appendChild(document.createElement('div')); n.className = 'err'; n.textContent = T('Не получилось: {e}', { e: T(er.message) }); }
+      };
+      att.onclick = go;
+      $('#syKey').onkeydown = (e) => { if (e.key === 'Enter') go(); };
+    }
+    return;
+  }
+  let dv = null;
+  try { dv = await syncMsg('devices'); } catch { /* покажем ошибку из статуса */ }
+  if (stale()) return;
+  const when = (t) => (t ? new Date(t).toLocaleString(LOCALE()) : '—');
+  // одно понятное состояние: всё сохранено / есть несинхронизированные изменения / ошибка / конфликт заметки
+  const lost = st.lost || [];
+  const state = st.broken ? ['err', '⛔', T('Это устройство отключено или ключ сменили на другом устройстве. Введите новый ключ или выключите синхронизацию здесь.')]
+    : st.err ? ['err', '⚠', T('Ошибка синхронизации: {e}. Повторю сама через несколько минут.', { e: T(st.err) })]
+    : lost.length ? ['warn', '⚠', T('Конфликт заметки: {n}. Ниже — ваш вариант, его можно вернуть.', { n: lost.length })]
+    : st.dirty ? ['warn', '⏳', T('Есть несинхронизированные изменения ({n}) — отправлю в течение минуты.', { n: st.dirty })]
+    : ['ok', '✅', T('Всё сохранено. Последняя синхронизация: {t}', { t: when(st.last) })];
+  box.innerHTML = intro
+    + (shownKey ? `<div class="keybox"><div>${T('Ключ синхронизации — введите его на другом своём устройстве:')}</div>
+        <div class="row" style="gap:8px;margin:6px 0"><code class="key">${esc(shownKey)}</code>${copyBtn('syCopy')}</div>
+        <div class="err">${T('⚠ Сохраните ключ сейчас (в менеджере паролей или на бумаге) — больше он не показывается. Только с ним можно восстановить данные, если потеряете все устройства. Ключ даёт доступ к вашим данным и доверию: никому не пересылайте.')}</div>
+        <button class="btn" id="syKeySaved" style="margin-top:6px">${T('Я сохранил ключ — скрыть')}</button></div>` : '')
+    + `<div class="state st-${state[0]}" role="status"><span aria-hidden="true">${state[1]}</span> ${esc(state[2])}</div>${note}`
+    + (lost.length ? lost.map((x, i) => `<div class="lost"><div><b>u/${esc(x.name)}</b> <span class="mut">${when(x.t)}</span></div>
+          <div class="mut">${T('Ваш вариант:')}</div><div class="lost-text">${esc(x.local)}</div>
+          <div class="mut">${T('Сейчас (с другого устройства):')} ${x.server ? esc(x.server) : T('(удалено)')}</div>
+          <div class="row" style="gap:8px;margin-top:6px"><button class="btn pri" data-lrestore="${i}">${T('Вернуть мой вариант')}</button>
+            <button class="btn" data-lcopy="${i}">${T('Копировать мой')}</button><button class="btn" data-ldrop="${i}">${T('Оставить текущий')}</button></div></div>`).join('') : '')
+    + (dv ? `<div class="mut" style="margin-top:8px">${T('Устройства ({n}):', { n: dv.devices.length })} ${dv.devices.map((d) => `${d.me ? '<b>' + T('это') + '</b>' : '#' + esc(d.id)} — ${T('последний раз {l}', { l: when(d.last) })}`).join('; ')}</div>` : '')
+    + `<div class="row" style="gap:8px;margin-top:10px">
+        <button class="btn" id="syNow">${T('Синхронизировать сейчас')}</button>
+        <button class="btn" id="syLeave">${T('Выключить на этом устройстве')}</button>
+        <button class="btn dng" id="syRotate">${T('Отключить устройство и сменить ключ')}</button></div>
+      <div class="mut" style="margin-top:6px">${T('Потеряли телефон? «Отключить устройство и сменить ключ»: данные перешифруются новым ключом и сохранятся, все остальные устройства и старый ключ потеряют доступ — на своих введите новый ключ. Доверие вашего аккаунта сохраняется. То, что уже скачано на потерянном устройстве, на нём остаётся.')}</div>`;
+  box.querySelectorAll('[data-lcopy]').forEach((b) => { b.onclick = () => copyText(lost[+b.dataset.lcopy].local, b); });
+  box.querySelectorAll('[data-ldrop]').forEach((b) => { b.onclick = async () => { await syncMsg('lostDrop', { i: +b.dataset.ldrop }); renderSyncBox(); }; });
+  box.querySelectorAll('[data-lrestore]').forEach((b) => { b.onclick = async () => {
+    try { await syncMsg('lostRestore', { i: +b.dataset.lrestore }); syncNote = { kind: 'ok', text: T('✓ Ваш вариант возвращён и уйдёт на другие устройства') }; }
+    catch (e) { syncNote = { kind: 'err', text: T('Не получилось: {e}', { e: T(e.message) }) }; }
+    renderSyncBox();
+  }; });
+  if (shownKey) {
+    $('#syCopy').onclick = (e) => copyText(shownKey, e.target);
+    $('#syKeySaved').onclick = () => { if (confirm(T('Точно сохранили? После этого ключ больше не показывается.'))) { syncShownKey = null; renderSyncBox(); } };
+  }
+  $('#syNow').onclick = async (e) => {
+    e.target.disabled = true; e.target.textContent = T('Синхронизирую…');
+    try { await syncMsg('now'); syncNote = null; } catch (er) { syncNote = { kind: 'err', text: T('Не получилось: {e}', { e: T(er.message) }) }; }
+    renderSyncBox();
+  };
+  $('#syRotate').onclick = async () => {
+    if (!confirm(T('Сменить ключ? Все остальные устройства будут отключены — на них нужно будет ввести новый ключ.'))) return;
+    try { const r = await syncMsg('rotate'); renderSyncBox(r.key); } catch (e) { syncNote = { kind: 'err', text: T('Не получилось: {e}', { e: T(e.message) }) }; renderSyncBox(); }
+  };
+  $('#syLeave').onclick = async () => {
+    if (!confirm(T('Выключить синхронизацию на этом устройстве? Данные на нём останутся.'))) return;
+    try { await syncMsg('leave'); syncNote = null; } catch (e) { syncNote = { kind: 'err', text: T(e.message) }; }
+    renderSyncBox();
+  };
+}
+
+// ---------- доверенный пользователь: один последовательный экран ----------
+// 1 ник → 2 код → 3 комментарий → 4 проверка → 5 результат. Видно текущий шаг и следующее действие.
+async function renderTrustBox() {
+  const box = $('#trustBox');
+  if (!box) return;
+  const intro = `<div class="mut">${T('В общий слой идут только метки и жалобы доверенных — так новореги не навешают меток нормальным людям. Доверенным становится «свой» в r/tjournal_refugees без плохих меток, подтвердив, что ник его.')}</div>`;
+  const privacy = `<details class="mut" style="margin-top:8px"><summary>${T('Что происходит с моими данными')}</summary>${T('Во время подтверждения сервер обрабатывает ваш ник reddit и хранит технический идентификатор аккаунта (не ник) — чтобы один аккаунт был одним голосом. Пока заявка ждёт, ник видит владелец (чтобы подтвердить знакомого вручную); после проверки или когда истечёт срок кода ник удаляется. Кто что поставил, другие не видят.')}</details>`;
+  const steps = (cur) => `<ol class="stepper">${[T('Ник'), T('Код'), T('Комментарий'), T('Проверка'), T('Результат')].map((s, i) => `<li class="${i + 1 < cur ? 'done' : i + 1 === cur ? 'cur' : ''}"${i + 1 === cur ? ' aria-current="step"' : ''}>${s}</li>`).join('')}</ol>`;
+  let st;
+  try { st = await api('/trust/status', undefined, null, true); }
+  catch (e) { box.innerHTML = intro + `<div class="err" style="margin-top:6px">${T('Сервер не ответил: {e}', { e: esc(T(e.message)) })}</div><button class="btn" id="trRetry" style="margin-top:6px">${T('Повторить')}</button>`; $('#trRetry').onclick = renderTrustBox; return; }
+  if (!st.on) { box.innerHTML = intro + `<div class="mut">${T('Доверие ещё не включено на сервере.')}</div>`; return; }
+  const contact = `<a href="${CONTACT}" target="_blank" rel="noopener">${T('Написать владельцу')}</a>`;
+  if (st.status === 'trusted') { box.innerHTML = intro + steps(6) + `<div class="state st-ok">✅ ${T('Вы доверенный пользователь')}${st.by === 'manual' ? ' ' + T('(допуск владельца)') : ''}. ${T('Ваши базовые метки и жалобы учитываются в общем слое.')}</div><div class="mut">${T('Комментарий с кодом теперь можно удалить.')}</div>` + privacy; return; }
+  if (st.status === 'revoked') { box.innerHTML = intro + `<div class="state st-err">⛔ ${T('Доверие отозвал владелец. Если это ошибка —')} ${contact}.</div>` + privacy; return; }
+  if (st.status === 'blocked') { box.innerHTML = intro + `<div class="state st-err">⛔ ${T('Это устройство отключено сменой ключа синхронизации: новые метки и жалобы с него не учитываются (уже принятые остаются). Введите новый ключ в блоке «Синхронизация».')}</div>` + privacy; return; }
+  if (st.status === 'pending') {
+    const waited = st.tries ? T('Сервер искал комментарий {n}, последний — в {t}. Архив его пока не видит — это обычно, он отстаёт от reddit на часы, иногда на сутки.', { n: N(st.tries, 'раз|раза|раз'), t: new Date(st.checked).toLocaleTimeString(LOCALE()) }) : T('Сервер ещё не проверял — проверка раз в несколько минут.');
+    box.innerHTML = intro + steps(st.tries ? 4 : 3) + `
+      <div class="step"><b>${T('Ваш код:')}</b> <code class="key">${esc(st.code)}</code> ${copyBtn('trCopy')}</div>
+      <div class="step"><b>${T('Напишите его комментарием в r/tjournal_refugees со своего аккаунта')}</b> — ${T('в любом посте.')}
+        <a class="btn" href="${TRY_URL}" target="_blank" rel="noopener" style="margin-left:6px">${T('Открыть r/tjournal_refugees ↗')}</a></div>
+      <div class="err">${T('⚠ Публикуйте только код, который получили здесь, в своём расширении. Чужой код подтвердит вашим аккаунтом ЧУЖОЕ расширение.')}</div>
+      <div class="state st-wait">⏳ ${esc(waited)}</div>
+      <div class="mut">${T('Заявка ждёт на сервере — страницу можно закрыть. Не удаляйте комментарий до подтверждения; после — можно. Код действует до {d}.', { d: new Date(st.expires).toLocaleString(LOCALE()) })}</div>
+      <div class="row" style="gap:8px;margin-top:8px"><button class="btn" id="trCheck">${T('Обновить статус')}</button><button class="btn dng" id="trCancel">${T('Отменить заявку')}</button></div>` + privacy;
+    $('#trCopy').onclick = (e) => copyText(st.code, e.target);
+    $('#trCheck').onclick = (e) => { e.target.textContent = T('Проверяю…'); renderTrustBox(); };
+    $('#trCancel').onclick = async () => { try { await api('/trust/cancel', {}, null, true); } catch { /* ignore */ } renderTrustBox(); };
+    return;
+  }
+  const why = st.status === 'denied' ? `<div class="state st-err">${T('Не получилось: {r}.', { r: esc(T(st.reason || '')) })} ${T('Если считаете это ошибкой —')} ${contact}.</div>`
+    : st.status === 'expired' ? `<div class="state st-warn">${T('Срок кода истёк — получите новый.')}</div>` : '';
+  box.innerHTML = intro + steps(1) + why + `<div class="row" style="gap:8px;margin-top:8px">
+      <input id="trNick" placeholder="${T('ваш ник reddit')}" style="width:220px" autocomplete="off" aria-label="${T('ваш ник reddit')}">
+      <button class="btn pri" id="trStart">${T('Получить код')}</button></div><div class="err" id="trErr"></div>` + privacy;
+  const go = async () => {
+    const nick = $('#trNick').value.trim();
+    if (!nick) return;
+    $('#trStart').disabled = true;
+    try { await api('/trust/start', { nick }, null, true); renderTrustBox(); }
+    catch (e) { $('#trStart').disabled = false; $('#trErr').textContent = T('Не получилось: {e}', { e: T(e.message) }); }
+  };
+  $('#trStart').onclick = go;
+  $('#trNick').onkeydown = (e) => { if (e.key === 'Enter') go(); };
+}
+
+// Админка: ручной допуск / отзыв по нику, список (только короткие id — ников сервер не хранит)
+async function renderAdminTrust(el) {
+  if (!el) return;
+  let d;
+  try { d = await api('/admin/trust', undefined, null, false, true); } catch (e) { el.innerHTML = `<div class="err">${esc(e.message)}</div>`; return; }
+  const act = d.trusted.filter((x) => !x.revoked).length;
+  el.innerHTML = `<div>${T('Доверенных: {n} (авто {a}, вручную {m}), отозвано {r}, заявок в ожидании {p}. Порог: метка — {t}, жалобы — {c}.', {
+      n: act, a: d.trusted.filter((x) => !x.revoked && x.by === 'auto').length, m: d.trusted.filter((x) => !x.revoked && x.by === 'manual').length,
+      r: d.trusted.length - act, p: d.pending, t: d.tagMin, c: d.complaintMin })}</div>
+    <div class="row" style="gap:8px;margin-top:8px"><input id="atNick" placeholder="${T('ник reddit')}" style="width:200px" autocomplete="off">
+      <button class="btn" id="atGrant">${T('Дать доверие')}</button><button class="btn dng" id="atRevoke">${T('Отозвать')}</button></div>
+    <div class="mut" style="margin-top:6px">${T('Отзыв сразу убирает голоса и жалобы этого аккаунта из общего слоя. Ников сервер не хранит — в списке только короткие id.')}</div>
+    ${d.requests && d.requests.length ? `<div style="margin-top:10px"><b>${T('Заявки в ожидании')}</b> <span class="mut">${T('(архив может отставать — знакомого можно подтвердить вручную)')}</span>
+      <div class="mut">${T('Ник в заявке может быть чужим. Прежде чем подтвердить — попросите человека в знакомом канале связи назвать код из своего расширения и сверьте с кодом здесь.')}</div>
+      ${d.requests.map((x) => `<div class="row" style="gap:8px;margin-top:4px"><span>u/${esc(x.nick)}</span> <code>${esc(x.code)}</code> <span class="mut">${dayStr(x.created)} · ${T('проверок {n}', { n: x.tries })}</span>
+        <button class="btn" data-approve="${esc(x.code)}" data-nick="${esc(x.nick)}">${T('Подтвердить')}</button></div>`).join('')}</div>` : ''}
+    <div style="margin-top:8px">${d.trusted.slice(0, 200).map((x) => `<span class="chip" title="${esc(x.by)}">${esc(x.id)} · ${x.by === 'manual' ? '✋' : '🤖'}${x.devices > 1 ? ' · ' + x.devices + '📱' : ''}${x.revoked ? ' · ⛔' : ''}</span>`).join('')}</div>`;
+  const go = async (path) => {
+    const user = el.querySelector('#atNick').value.trim();
+    if (!user) return;
+    if (path.endsWith('revoke') && !confirm(T('Отозвать доверие {u}? Его голоса перестанут считаться.', { u: user }))) return;
+    try { const r = await api(path, { user }, null, false, true); alert(T('Готово: {id}', { id: r.id })); } catch (e) { alert(T(e.message)); }
+    renderAdminTrust(el);
+  };
+  el.querySelector('#atGrant').onclick = () => go('/admin/trust/grant');
+  el.querySelectorAll('[data-approve]').forEach((b) => (b.onclick = async () => {
+    const code = b.dataset.approve;
+    if (!confirm(T('Подтвердить u/{u} с кодом {c}? Вы сверили этот код с человеком в знакомом канале связи.', { u: b.dataset.nick, c: code }))) return;
+    try { const r = await api('/admin/trust/approve', { code }, null, false, true); alert(T('Готово: {id}', { id: r.id })); } catch (e) { alert(T(e.message)); }
+    renderAdminTrust(el);
+  }));
+  el.querySelector('#atRevoke').onclick = () => go('/admin/trust/revoke');
+}
+
 function renderAdmin() {
   if (!adminData) { adminData = { complaints: [], perWho: {}, members: 0, err: '', loading: true }; fetchAdmin(); }
   const a = adminData;
@@ -593,10 +821,13 @@ function renderAdmin() {
       </tr>`).join('')}</tbody>
     </table></div>
     ${myVotes.length ? `<div class="card" style="padding:10px;margin-top:8px">${myVotes.map((v) => `<span class="chip">u/${esc(v.name)} · ${esc(v.tag)}</span>`).join('')}</div>` : ''}` : ''}
+    <h2>${T('🛡 Доверенные пользователи')}</h2>
+    <div class="card" style="padding:12px" id="adminTrust"><span class="mut">${T('Загрузка…')}</span></div>
     <hr style="border:none;border-top:1px solid var(--line);margin:18px 0">`;
   $('#main').prepend(box);
 
   box.querySelectorAll('[data-who]').forEach((el) => (el.onclick = () => { adminWho = el.dataset.who; renderComplaints(); }));
+  renderAdminTrust(box.querySelector('#adminTrust'));
   const close = box.querySelector('#closeWho');
   if (close) close.onclick = () => { adminWho = ''; renderComplaints(); };
   const purge = box.querySelector('#purgeWho');
@@ -623,80 +854,94 @@ function ruleRow(r) {
   </div>`;
 }
 
+// ---------- настройки (1.3.96): по задачам ----------
+// Вид и язык · Мои метки · Общие оценки и участие · Синхронизация · Доверенный пользователь · Расширенные.
+// Переключатели сохраняются сразу (результат — рядом); баллы, пороги, правила и диагностика — в «Расширенных».
+const openSecs = new Set(['view', 'mine', 'share']);
 function renderSettings() {
-  $('#main').innerHTML = `
-    <div class="card set">
-      <div class="row"><b>${T('Язык')}</b>
-        <select id="langSel"><option value="uk" ${LANG === 'uk' ? 'selected' : ''}>Українська</option><option value="ru" ${LANG === 'ru' ? 'selected' : ''}>Русский</option></select>
-      </div>
-      <label>${T('Быстрые метки (через запятую)')}
-        <input id="presets" value="${esc(settings.presets.join(', '))}">
-      </label>
-      <div class="row" style="font-weight:400">${T('Размер значков у ника')}
-        <select id="sizeSel">${[['s', T('маленький')], ['m', T('средний')], ['l', T('большой')]].map(([v, t]) => `<option value="${v}" ${(settings.size || 'm') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
-      <div class="row" style="font-weight:400">${T('Сворачивать длинные метки (значок и число, полный текст — при наведении)')}
-        <select id="compactSel">${[['auto', T('при 3 и больше метках')], ['always', T('всегда')], ['never', T('никогда')]].map(([v, t]) => `<option value="${v}" ${(settings.compact || 'auto') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
-      <div class="row" style="font-weight:400">${T('Метка «свій»')}
-        <select id="trustStyleSel">${[['bar', T('зелёная полоска')], ['text', T('текст')]].map(([v, t]) => `<option value="${v}" ${(settings.trustStyle === 'text' ? 'text' : 'bar') === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
-      <label class="row" style="font-weight:400"><input type="checkbox" id="showAdd" ${settings.showAdd ? 'checked' : ''}> ${T('Показывать 🏷 рядом с непомеченными никами')}</label>
-      <label class="row" style="font-weight:400"><input type="checkbox" id="pubOn" ${settings.pubOn !== false ? 'checked' : ''}> ${T('Общий слой: мои жалобы и базовые метки (зрадойоб, орк, новорег, консерва) видят все пользователи Хрюнебота, а я — их. Чужая метка видна, когда её поставили 3+ человека.')}</label>
-      <label class="row" style="font-weight:400"><input type="checkbox" id="helpQueue" ${settings.helpQueue === true ? 'checked' : ''}> ${T('Помогать пополнять базу: ник, который Хрюнебот проверил сам и которого нет на сервере, уходит владельцу в очередь (только ник и цифры проверки). Публикует владелец после своей проверки.')}</label>
-      <div class="row" style="font-weight:400">${T('🐽 Нахрюкометр: баллов до 50%')}
-        <input id="halfAt" type="number" min="1" max="50" value="${settings.halfAt || 7}" style="width:70px"></div>
+  const sec = (id, title, body, hint) => `<details class="card sec" data-sec="${id}" ${openSecs.has(id) ? 'open' : ''}>
+      <summary><span>${title}</span>${hint ? `<span class="mut">${hint}</span>` : ''}</summary><div class="set">${body}</div></details>`;
+  const sel = (id, cur, opts) => `<select id="${id}">${opts.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
+  // переключатель: что он делает и что изменится
+  const tog = (id, on, title, what) => `<label class="tog"><input type="checkbox" id="${id}" ${on ? 'checked' : ''}>
+      <span><b>${title}</b><span class="mut">${what}</span></span><span class="saved" data-for="${id}" aria-live="polite"></span></label>`;
+  const S = settings;
+  $('#main').innerHTML = `<div class="secs">
+    ${sec('view', T('Вид и язык'), `
+      <div class="row"><b>${T('Язык')}</b>${sel('langSel', LANG, [['uk', 'Українська'], ['ru', 'Русский']])}<span class="saved" data-for="langSel"></span></div>
+      <div class="row">${T('Размер значков у ника')} ${sel('sizeSel', S.size || 'm', [['s', T('маленький')], ['m', T('средний')], ['l', T('большой')]])}<span class="saved" data-for="sizeSel"></span></div>
+      <div class="row">${T('Сколько меток показывать у ника')} ${sel('compactSel', S.compact || 'auto', [['auto', T('1–2 главные, остальные под «+N» (рекомендуется)')], ['always', T('1–2 главные, всегда коротко: значок и число')], ['never', T('все и полностью')]])}<span class="saved" data-for="compactSel"></span></div>
+      <div class="row">${T('Метка «свой»')} ${sel('trustStyleSel', S.trustStyle === 'text' ? 'text' : 'bar', [['bar', T('зелёная полоска')], ['text', T('текст «свой»')]])}<span class="saved" data-for="trustStyleSel"></span></div>
+      ${tog('showAdd', S.showAdd, T('Показывать 🏷 у ников без меток'), T('Чтобы быстро поставить метку. Выключите — у ников без меток ничего не будет.'))}
+    `)}
+    ${sec('mine', T('Мои метки и что показывать'), `
+      <label class="stack"><b>${T('Быстрые метки (через запятую)')}</b><span class="mut">${T('Кнопки в карточке ника. Свои метки видите только вы (базовые — ещё и общий слой, если он включён).')}</span>
+        <span class="row"><input id="presets" class="grow" value="${esc(S.presets.join(', '))}"><button class="btn" id="savePresets">${T('Сохранить')}</button><span class="saved" data-for="presets"></span></span></label>
+      <div class="mut" style="margin-top:4px">${T('Что показывать у ников — меняет только то, что видите вы. Общая база, чужие оценки и ваши голоса от этого не меняются.')}</div>
+      ${tog('clownOn', S.clownOn !== false, T('«🤡 клоун»'), T('Пишет в r/RedditUaTalks. Это метка места, а не обвинение.'))}
+      ${tog('homeDownOn', S.homeDownOn !== false, T('«👎 минусуют тут»'), T('В r/tjournal_refugees его в основном минусуют.'))}
+      ${tog('konsOn', S.konsOn !== false, T('«🥫 консерва»'), T('Купленный или долго лежавший аккаунт: молчал, раньше писал по-английски, похож на ферму кармы.'))}
+      ${tog('accOn', !!S.accOn, T('«❗ новорег»'), T('Аккаунт моложе {d} дн.', { d: S.newDays || 30 }))}
+      ${tog('hiddenOn', S.hiddenOn !== false, T('«🙈 профиль скрыт»'), T('Карма есть, а посты и комменты спрятаны — так делают и обычные люди.'))}
+      ${tog('trustOn', S.trustOn !== false, T('Учитывать «свой»'), T('У активных участников TJ слабые подозрения («?», 🥫, 🤡, 👀) скрыты и баллы меньше.'))}
+      <div class="row" style="margin-top:6px"><button class="btn" id="export">${T('Экспорт в JSON')}</button><button class="btn" id="importBtn">${T('Импорт из JSON')}</button>
+        <input type="file" id="importFile" accept=".json,application/json" hidden><span class="saved" data-for="import"></span></div>
+      <div class="mut">${T('Экспорт — ваши метки, заметки, жалобы, оценки и настройки одним файлом. Импорт объединяет: метки складываются.')}</div>
+    `)}
+    ${sec('share', T('Общие оценки и участие'), `
+      ${tog('pubOn', S.pubOn !== false, T('Общий слой'), T('Включён: вы видите общие метки и жалобы, а ваши базовые метки (зрадойоб, орк, новорег, консерва) и жалобы отправляются в общий слой и учитываются, если вы доверенный пользователь. Выключен: ничего не отправляется и не показывается из общего слоя; уже отправленное остаётся, пока вы его не снимете.'))}
+      ${tog('helpQueue', S.helpQueue === true, T('Отправлять ники в очередь проверки'), consentText())}
+      <div class="mut" id="consentNow2">${consentChoice()}</div>
+      <div class="mut">${T('Это разные вещи: скрыть метку у себя — раздел выше; общий слой — ваши голоса для всех; очередь — помощь базе новыми никами.')}</div>
+      <div class="mut">${T('Кто пожаловался, другие пользователи не видят. Владелец видит только обезличенный номер участника (например «Ж-3fa9c1») — чтобы стирать спам. IP и точное время не хранятся.')}</div>
+    `)}
+    ${sec('sync', T('Синхронизация между устройствами'), '<div id="syncBox"></div>')}
+    ${sec('trust', T('Доверенный пользователь'), '<div id="trustBox"></div>')}
+    ${sec('adv', T('Расширенные'), `
+      <div class="mut">${T('Баллы, пороги, правила автопроверки и диагностика. Менять не обязательно — значения по умолчанию подобраны.')}</div>
+      <div class="row">${T('🐽 Нахрюкометр: баллов до 50%')} <input id="halfAt" type="number" min="1" max="50" value="${S.halfAt || 7}" style="width:70px"></div>
       <div class="mut" id="halfHint"></div>
       <div class="mut">${T('Баллы: каждый отдельный человек, который пожаловался, — 1 балл (повторные жалобы от него — по 0,25). Нахрюки (посты и комменты юзера в сабах из правил) — баллы правила за каждые 10. Чем больше число — тем строже шкала.')}</div>
-      <div class="mut">${T('Кто пожаловался, другие пользователи не видят. Владелец сервера видит только обезличенный номер участника (например «Ж-3fa9c1») — чтобы находить и стирать спам. IP и точное время не хранятся.')}</div>
-      <label>${T('🔑 Ключ админа (только для владельца сервера)')}
-        <input id="adminKey" type="password" value="${esc(adminKey)}" placeholder="${T('пусто — обычный пользователь')}" autocomplete="off">
-      </label>
-      <hr style="border:none;border-top:1px solid var(--line);width:100%">
-      <div><b>${T('🔍 Автопроверка по сабреддитам')}</b>
-        <div class="mut">${T('Для каждого ника на странице смотрим его последние ~100 комментов и ~100 постов. Каждый пост или коммент в сабах из правила — это нахрюк. Если нахрюков не меньше «мин.», у ника появляется пунктирная метка «🔍 метка ×число», а нахрюкометр растёт с числом нахрюков. Запросы идут только на reddit, кэш — сутки.')}</div></div>
-      <label class="row" style="font-weight:400"><input type="checkbox" id="autoOn" ${settings.autoOn !== false ? 'checked' : ''}> ${T('Включить автопроверку по сабам')}</label>
-      <label>${T('Проверять историю только у ников из сабов (через запятую; пусто — везде)')}
-        <input id="autoSubs" value="${esc((settings.autoSubs || []).join(', '))}" placeholder="tjournal_refugees">
-      </label>
-      <div class="mut">${T('Так проверка быстрее и меньше запросов к reddit. Метки, жалобы и уже посчитанные результаты видны на всех сабах.')}</div>
-      <label class="row" style="font-weight:400"><input type="checkbox" id="homeDownOn" ${settings.homeDownOn !== false ? 'checked' : ''}> ${T('«👎 минусуют тут»: в этих сабах его в основном минусуют (60%+), а снаружи плюсуют — 2 балла; без контраста — 1')}</label>
-      <label class="row" style="font-weight:400"><input type="checkbox" id="hiddenOn" ${settings.hiddenOn !== false ? 'checked' : ''}> ${T('«🙈 профиль скрыт»: карма есть, а посты и комменты спрятаны — 1 балл (скрывают и обычные люди, это лишь повод присмотреться)')}</label>
-      <label class="row" style="font-weight:400"><input type="checkbox" id="clownOn" ${settings.clownOn !== false ? 'checked' : ''}> ${T('«🤡 клоун»: пишет в r/RedditUaTalks — до 2 баллов (метка места, не обвинение; можно выключить)')}</label>
-      <label class="row" style="font-weight:400"><input type="checkbox" id="archFallback" ${settings.archFallback !== false ? 'checked' : ''}> ${T('Если reddit просит подождать — брать историю из открытого архива ArcticShift (быстрее; ник проверяемого уходит в архив)')}</label>
-      <div id="rules" style="display:grid;gap:8px">${(settings.autoRules || []).map(ruleRow).join('')}</div>
+      ${tog('autoOn', S.autoOn !== false, T('Автопроверка по сабам'), T('Хрюнебот сам смотрит последние ~100 комментов и постов ника, если его нет в общей базе.'))}
+      <label class="stack">${T('Проверять историю только у ников из сабов (через запятую; пусто — везде)')}<input id="autoSubs" value="${esc((S.autoSubs || []).join(', '))}" placeholder="tjournal_refugees"></label>
+      ${tog('archFallback', S.archFallback !== false, T('Если reddit просит подождать — брать историю из архива ArcticShift'), T('Быстрее; ник проверяемого уходит в открытый архив.'))}
+      <div id="rules" style="display:grid;gap:8px">${(S.autoRules || []).map(ruleRow).join('')}</div>
       <div class="row"><button class="btn" id="addRule">${T('+ Правило')}</button></div>
       <div class="mut">${T('Учитывается, как человека встретили в этих сабах: если его там в основном плюсуют — метка правила (👹 орк); если минусят — «🥊 спорщик», в нахрюкометр не идёт; если оценок мало или поровну — «🤷 орк?», половина баллов.')}</div>
-      <div><b>${T('❗ Новореги')}</b></div>
-      <div class="row" style="font-weight:400">
-        <label class="row" style="font-weight:400"><input type="checkbox" id="accOn" ${settings.accOn ? 'checked' : ''}> ${T('Помечать аккаунты моложе')}</label>
-        <input id="newDays" type="number" min="1" value="${settings.newDays}" style="width:70px"> ${T('дн. (скрытый профиль — моложе 90 дн.), баллов нахрюкометра')}
-        <input id="accPoints" type="number" min="0" max="10" step="0.5" value="${settings.accPoints}" style="width:64px">
-      </div>
-      <div><b>${T('🥫 Консервы')}</b></div>
-      <div class="row" style="font-weight:400">
-        <label class="row" style="font-weight:400"><input type="checkbox" id="konsOn" ${settings.konsOn !== false ? 'checked' : ''}> ${T('Искать консервы, баллов нахрюкометра')}</label>
-        <input id="konsPoints" type="number" min="0" max="10" step="0.5" value="${settings.konsPoints ?? 4}" style="width:64px">
-        ${T('«консерва?» —')}
-        <input id="konsWeakPoints" type="number" min="0" max="10" step="0.5" value="${settings.konsWeakPoints ?? 1}" style="width:64px">
-      </div>
-      <div class="mut">${T('Консерва — аккаунт, который раньше писал по-английски (часто в NSFW), а за последние 3 месяца заговорил кириллицей. Нужно, чтобы аккаунту было 2+ года — или чтобы он пропадал на 4+ месяца перед этим. Много NSFW раньше — «🥫 консерва», мало — «🥫 консерва?» (подозрение, меньше баллов). Ещё «🥫 консерва» — если аккаунт молчал полгода+ и снова пишет, или похож на ферму кармы (фотки в кучу сабов за день, заголовки в пару слов) и сейчас пишет кириллицей. Если аккаунт старше полугода и по reddit раньше не писал кириллицей, ник уходит в открытый архив reddit ArcticShift (arctic-shift.photon-reddit.com): архив видит и удалённые посты. Оттуда берём лишь числа — сколько постов, на каком языке, сколько NSFW и даты. Чужие тексты не показываем и не храним.')}</div>
+      <div class="row">${T('«❗ новорег»: моложе')} <input id="newDays" type="number" min="1" value="${S.newDays}" style="width:70px"> ${T('дн., баллов')} <input id="accPoints" type="number" min="0" max="10" step="0.5" value="${S.accPoints}" style="width:64px"></div>
+      <div class="row">${T('«🥫 консерва»: баллов')} <input id="konsPoints" type="number" min="0" max="10" step="0.5" value="${S.konsPoints ?? 4}" style="width:64px"> ${T('«консерва?» —')} <input id="konsWeakPoints" type="number" min="0" max="10" step="0.5" value="${S.konsWeakPoints ?? 1}" style="width:64px"></div>
+      <div class="row"><button class="btn pri" id="saveSet">${T('Сохранить расширенные')}</button><span class="saved" data-for="saveSet" aria-live="polite"></span></div>
+      <hr>
       <div class="mut" id="reviewInfo"></div>
       <div class="row"><span class="mut" id="histInfo"></span><button class="btn" id="clearHist">${T('Сбросить кэш проверок')}</button></div>
-      <div class="row"><button class="btn pri" id="saveSet">${T('Сохранить настройки')}</button><span class="mut" id="saved"></span></div>
-      <hr style="border:none;border-top:1px solid var(--line);width:100%">
-      <div class="row">
-        <button class="btn" id="export">${T('Экспорт в JSON')}</button>
-        <button class="btn" id="importBtn">${T('Импорт из JSON')}</button>
-        <input type="file" id="importFile" accept=".json,application/json" hidden>
-        <button class="btn dng" id="wipe">${T('Удалить всё')}</button>
-      </div>
-      <div class="mut">${T('Импорт объединяет данные: метки складываются, счётчики по сабам берутся максимальные.')}</div>
-    </div>`;
+      <label class="stack">${T('🔑 Ключ админа (только для владельца сервера)')}
+        <span class="row"><input id="adminKey" type="password" value="${esc(adminKey)}" placeholder="${T('пусто — обычный пользователь')}" autocomplete="off"><button class="btn" id="saveAdmin">${T('Сохранить')}</button><span class="saved" data-for="adminKey"></span></span></label>
+      <div class="row"><button class="btn dng" id="wipe">${T('Удалить все мои метки и статистику')}</button></div>
+    `)}
+  </div>`;
 
-  // Язык меняется сразу, без кнопки «Сохранить»
-  $('#langSel').onchange = (e) => { settings.lang = e.target.value; saveSettings(); };
-  // Размер тоже сразу — открытые вкладки reddit перерисуются сами
-  $('#sizeSel').onchange = (e) => { settings.size = e.target.value; saveSettings(); };
-  $('#compactSel').onchange = (e) => { settings.compact = e.target.value; saveSettings(); };
-  $('#trustStyleSel').onchange = (e) => { settings.trustStyle = e.target.value; saveSettings(); };
+  // запоминаем, какие разделы открыты (на время сеанса)
+  document.querySelectorAll('details.sec').forEach((d) => d.addEventListener('toggle', () => { if (d.open) openSecs.add(d.dataset.sec); else openSecs.delete(d.dataset.sec); }));
+  const flash = (id, text = T('✓ Сохранено'), bad = false) => {
+    const el = document.querySelector(`.saved[data-for="${id}"]`);
+    if (!el) return;
+    el.textContent = text; el.classList.toggle('err', bad);
+    clearTimeout(el.t); el.t = setTimeout(() => { el.textContent = ''; }, 2500);
+  };
+  const saveNow = (id) => saveSettings().then(() => flash(id), (e) => flash(id, T('Не сохранилось: {e}', { e: e.message }), true));
+  $('#langSel').onchange = (e) => { settings.lang = e.target.value; saveNow('langSel'); };
+  $('#sizeSel').onchange = (e) => { settings.size = e.target.value; saveNow('sizeSel'); };
+  $('#compactSel').onchange = (e) => { settings.compact = e.target.value; saveNow('compactSel'); };
+  $('#trustStyleSel').onchange = (e) => { settings.trustStyle = e.target.value; saveNow('trustStyleSel'); };
+  for (const id of ['showAdd', 'clownOn', 'homeDownOn', 'konsOn', 'accOn', 'hiddenOn', 'trustOn', 'pubOn', 'autoOn', 'archFallback']) {
+    $('#' + id).onchange = (e) => { settings[id] = e.target.checked; saveNow(id); };
+  }
+  $('#helpQueue').onchange = (e) => { settings.helpQueue = e.target.checked; saveNow('helpQueue'); };
+  const savePresets = () => { settings.presets = $('#presets').value.split(',').map((s) => s.trim()).filter(Boolean); saveNow('presets'); };
+  $('#savePresets').onclick = savePresets;
+  $('#presets').onkeydown = (e) => { if (e.key === 'Enter') savePresets(); };
+  renderTrustBox();
+  renderSyncBox();
   // Подсказка: сколько процентов даст 1, 3 и 10 человек при выбранной строгости
   const hint = () => {
     const h = Math.max(1, +$('#halfAt').value || 7);
@@ -720,28 +965,18 @@ function renderSettings() {
     if (el) el.textContent = n ? T('Проверено ников: {n}', { n }) : T('Пока никого не проверяли');
   });
   $('#clearHist').onclick = async () => { await chrome.storage.local.remove('rt_hist'); $('#histInfo').textContent = T('Кэш сброшен'); };
-  // Ручные оценки вердиктов (хранятся отдельно, сброс кэша их не трогает)
   chrome.storage.local.get('rt_review').then(({ rt_review: r = {} }) => {
     const v = Object.values(r), c = (m) => v.filter((x) => x.mark === m).length;
     const el = document.getElementById('reviewInfo');
     if (el) el.textContent = T('Ручных оценок вердиктов: {n} (✔ {a} · ✖ {b} · ? {c}) — попадают в «Экспорт в JSON»', { n: v.length, a: c('ok'), b: c('bad'), c: c('doubt') });
   });
-
-  $('#saveSet').onclick = () => {
-    settings.presets = $('#presets').value.split(',').map((s) => s.trim()).filter(Boolean);
-    settings.showAdd = $('#showAdd').checked;
-    settings.pubOn = $('#pubOn').checked;
-    settings.helpQueue = $('#helpQueue').checked;
-    settings.halfAt = Math.min(50, Math.max(1, +$('#halfAt').value || 7));
+  $('#saveAdmin').onclick = () => {
     adminKey = $('#adminKey').value.trim();
-    adminData = null;
-    chrome.storage.local.set({ rt_admin: { key: adminKey } });
-    remoteComplaints = null;
-    settings.autoOn = $('#autoOn').checked;
-    settings.archFallback = $('#archFallback').checked;
-    settings.homeDownOn = $('#homeDownOn').checked;
-    settings.hiddenOn = $('#hiddenOn').checked;
-    settings.clownOn = $('#clownOn').checked;
+    adminData = null; remoteComplaints = null;
+    chrome.storage.local.set({ rt_admin: { key: adminKey } }).then(() => flash('adminKey'));
+  };
+  $('#saveSet').onclick = () => {
+    settings.halfAt = Math.min(50, Math.max(1, +$('#halfAt').value || 7));
     settings.autoSubs = $('#autoSubs').value.split(/[\s,]+/).map((s) => s.trim().toLowerCase().replace(/^\/?r\//, '')).filter(Boolean);
     const oldRules = settings.autoRules || [];
     settings.autoRules = [...document.querySelectorAll('.rule')].map((r) => ({
@@ -751,20 +986,18 @@ function renderSettings() {
       min: Math.max(1, +r.querySelector('.r-min').value || 1),
       points: Math.max(0, +r.querySelector('.r-pts').value || 0),
     })).filter((r) => r.tag && r.subs.length).map((r) => keepRuleExtras(r, oldRules));
-    settings.accOn = $('#accOn').checked;
     settings.newDays = Math.max(1, +$('#newDays').value || 30);
     settings.accPoints = Math.max(0, +$('#accPoints').value || 0);
-    settings.konsOn = $('#konsOn').checked;
     settings.konsPoints = Math.max(0, +$('#konsPoints').value || 0);
     settings.konsWeakPoints = Math.max(0, +$('#konsWeakPoints').value || 0);
-    saveSettings().then(() => { $('#saved').textContent = T('Сохранено'); });
+    saveNow('saveSet');
   };
   $('#export').onclick = async () => {
     const { rt_review: reviews = {} } = await chrome.storage.local.get('rt_review'); // ручные оценки вердиктов тоже выгружаем
     const blob = new Blob([JSON.stringify({ version: 1, users, settings, reviews }, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `reddit-tagger-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `hryunebot-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
@@ -791,9 +1024,9 @@ function renderSettings() {
         n++;
       }
       await saveUsers();
-      alert(T('Импортировано: {n}', { n }));
+      flash('import', T('✓ Импортировано: {n}', { n }));
     } catch (err) {
-      alert(T('Не получилось прочитать файл: {e}', { e: err.message }));
+      flash('import', T('Не получилось прочитать файл: {e}', { e: err.message }), true);
     }
   };
   $('#wipe').onclick = () => {

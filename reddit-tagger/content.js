@@ -103,6 +103,7 @@
       // Сервер не ответил: запомненные вердикты не трогаем, но помечаем как «из памяти, не свежие».
       for (const k of names) { const s = shared.get(k); if (s) s.failed = true; }
       renderAll();
+      refreshPop();
       return;
     }
     for (const k of names) {
@@ -123,6 +124,7 @@
     if (srvCacheMerge(srvCache, names, verdicts, Date.now())) srvDirty = true;
     if (verdicts) for (const k of names) noCache.delete(k); // сервер ответил — «перевірити заново» по серверу выполнено
     renderAll();
+    refreshPop();
     scan();
   }
 
@@ -227,17 +229,11 @@
   let histNow = { k: null, stage: '' };
   // Пока ждём лимит — раз в секунду обновляем отсчёт в открытом окне.
   setInterval(() => {
-    if (histNow.stage === 'wait' && pop && pop.isConnected) {
-      const el = pop.querySelector('.rt-checkline');
-      if (el) el.innerHTML = checkHtml(pop.dataset.user);
-    }
+    if (histNow.stage === 'wait' && pop && pop.isConnected) refreshPop();
   }, 1000);
   function setStage(k, stage, until) {
     histNow = { k, stage, until };
-    if (pop && pop.isConnected) {
-      const el = pop.querySelector('.rt-checkline');
-      if (el) el.innerHTML = checkHtml(pop.dataset.user);
-    }
+    refreshPop();
   }
 
   // Очередь не должна умирать от ошибки на одном нике: ловим, пропускаем ник и идём дальше.
@@ -357,16 +353,7 @@
     enqueueNew(k, histNames.get(k), entry).catch(() => { /* очередь не должна ломать проверку */ });
     histNow = { k: null, stage: '' };
     histDirty = true;
-    if (pop && pop.isConnected && pop.dataset.user === k) {
-      const el = pop.querySelector('.rt-checkline');
-      if (el) el.innerHTML = checkHtml(k);
-      // нахрюкометр тоже пересчитываем — автопроверка добавляет баллы
-      const sc = botScore(k);
-      const ml = pop.querySelector('.rt-meterline');
-      if (ml) ml.textContent = sc.pct ? meterLine(sc) : T('Нахрюкометр: жалоб нет');
-      const bar = pop.querySelector('.rt-meterbar span');
-      if (bar) { bar.style.width = sc.pct + '%'; bar.style.background = meterColor(sc.pct); }
-    }
+    refreshPop(); // открытая карточка: метки, объяснение и нахрюкометр — заново
     document.querySelectorAll(`.rt-wrap[data-user="${CSS.escape(k)}"]`).forEach(render);
   }
 
@@ -573,30 +560,7 @@
   };
   // Метки из серверного вердикта — в том же виде, что и свои (для render и нахрюкометра).
   function srvHits(k) {
-    const v = srvVerdict(k);
-    if (!v) return [];
-    const ev = v.ev || {}, out = [];
-    const base = { srv: v, n: 1, where: [] };
-    for (const t of v.tags) {
-      if (t === 'kons' || t === 'kons?') {
-        if (!settings.konsOn) continue;
-        out.push({ ...base, icon: '🥫', tag: 'консерва', kons: t === 'kons' ? 'full' : 'weak',
-          points: t === 'kons' ? settings.konsPoints ?? 4 : settings.konsWeakPoints ?? 1 });
-      } else if (t === 'homedown' && settings.homeDownOn !== false) {
-        const hd = ev.home || { up: 0, down: 0, eUp: 0, eDown: 0 };
-        const hv = homeVotes({ a: { up: hd.up, down: hd.down }, b: { up: hd.eUp, down: hd.eDown } }, ['a']);
-        out.push({ ...base, icon: '👎', tag: 'минусуют', homeDown: hv, n: hd.down || 0, points: hv.contrast ? 2 : 1 });
-      } else if (parseRuleCode(t)) {
-        // орк / клоун / слежу и спорщик с источником (deb_ork, deb_clown, deb_watch); цифры — того же источника
-        const { kind, verdict } = parseRuleCode(t);
-        const o = ev[kind] || { n: 0 };
-        if (kind === 'clown' && settings.clownOn === false) continue; // «клоун» выключен в настройках
-        const full = srvRuleFull(kind, o.n); // слежу 1, клоун — за нахрюки до 2, орк — за нахрюки (score.js)
-        out.push({ ...base, icon: RULE_KIND[kind].icon, tag: RULE_KIND[kind].tag, kind, n: o.n || 0, up: o.up || 0, down: o.down || 0, posts: o.posts, comments: o.comments, bySub: o.bySub,
-          verdict, points: ruleHitPoints(full, verdict, o.up || 0, o.down || 0) });
-      }
-    }
-    return out;
+    return hitsFromVerdict(srvVerdict(k), settings);
   }
 
   // «Свій»: давний и хорошо принятый в tj (homeTrust в score.js) — слабые подозрения прячем, автобаллы пополам,
@@ -684,7 +648,7 @@
   }
   const pc = (a, b) => (b ? Math.round((100 * a) / b) : 0);
   // Возраст аккаунта: младше года — в днях («74 дн.»), старше — в годах.
-  const ageStr = (days) => (days < 365 ? T('{n} дн.', { n: Math.floor(days) }) : T('{n} лет', { n: Math.floor(days / 365.25) }));
+  const ageStr = (days) => (days < 365 ? N(Math.floor(days), 'день|дня|дней') : N(Math.floor(days / 365.25), 'год|года|лет'));
   // Самое долгое молчание: по reddit и по архиву (если смотрели).
   // Ферма кармы: по архиву (видит удалённые) или по reddit — где больше постов.
   function farmOf(h) {
@@ -718,7 +682,7 @@
       : x.homeDown ? `👎×${x.n}`
       : x.hiddenP ? '🙈'
       : x.verdict === 'debater' ? `🥊${x.icon || ''}`
-      : `${x.icon || '🔍'}${x.verdict === 'unclear' ? '?' : ''}×${x.n}`);
+      : `${x.icon || '🔍'}${x.verdict === 'unclear' ? '?' : ''}×${hitCount(x)}`);
     if (tv && tv.trusted) names.unshift(T('свой'));
     return T('Ваша проверка ({s}): {r}', { s: h.src === 'arch' ? T('архив') : 'reddit', r: names.length ? names.join(' · ') : T('ничего не нашла') });
   }
@@ -827,7 +791,7 @@
       ? T('свой: в r/tjournal_refugees заплюсовано {u} из {t} комментов (видна не вся история) — слабые подозрения скрыты, уверенные метки в полную силу', { u: tr.trust.cUp, t: tr.trust.cUp + tr.trust.cDown })
       : T('свой: в r/tjournal_refugees заплюсовано {u} из {t} — слабые подозрения скрыты, автобаллы пополам', { u: tr.trust.up, t: tr.trust.up + tr.trust.down });
     const hid = tr && tr.hidden && tr.hidden.length
-      ? T('скрыто, потому что свой: {h}', { h: tr.hidden.map((x) => x.kons ? (x.kons === 'weak' ? '🥫?' : '🥫') : `${x.icon || '🔍'}${x.verdict === 'unclear' ? '?' : ''}×${x.n}`).join(' · ') }) : '';
+      ? T('скрыто, потому что свой: {h}', { h: tr.hidden.map((x) => x.kons ? (x.kons === 'weak' ? '🥫?' : '🥫') : `${x.icon || '🔍'}${x.verdict === 'unclear' ? '?' : ''}×${hitCount(x)}`).join(' · ') }) : '';
     const rest = hits.filter((h) => !h.trust);
     const srv = rest.filter((h) => h.srv);
     const main = srv.length ? srvText(srv) : autoLineLocal(rest);
@@ -853,6 +817,9 @@
         ? '🥊 ' + T('спорщик') + ` ${h.icon || ''}: ` + ruleWhere(h)
         : `${h.verdict === 'unclear' ? '🤷' : h.icon} ${h.tag === 'слежу' ? T('слежу') : h.tag}${h.verdict === 'unclear' ? '?' : ''}: ` + ruleWhere(h)).join('\n');
 
+  // Телефон или узкое окно: значки всегда сворачиваем (настройка «авто»), окно ника — по ширине экрана
+  const narrowScreen = () => TOUCH || Math.round((window.visualViewport && visualViewport.width) || innerWidth) < 600;
+
   // ---------- нахрюкометр ----------
   // Формула — в score.js: главное число отдельных людей, повторы почти не добавляют,
   // плюс баллы автопроверки. Метки на шкалу не влияют.
@@ -876,8 +843,8 @@
   function meterLine(s) {
     const parts = [T('Нахрюкометр: {p}%', { p: s.pct })];
     if (s.mine) parts.push(T('моих жалоб: {n}', { n: s.mine }));
-    if (s.pub.n) parts.push(T('жалоб от всех пользователей: {n} от {p} чел.', { n: s.pub.n, p: s.pub.p }));
-    if (s.group.n) parts.push(T('жалоб в группе: {n} от {p} чел.', { n: s.group.n, p: s.group.p }));
+    if (s.pub.n) parts.push(T('жалоб от всех пользователей: {n} от {p}', { n: s.pub.n, p: N(s.pub.p, 'человека|человек|человек') }));
+    if (s.group.n) parts.push(T('жалоб в группе: {n} от {p}', { n: s.group.n, p: N(s.group.p, 'человека|человек|человек') }));
     const counted = s.hits.filter((h) => h.points > 0);
     if (counted.length) parts.push(T('сработала автопроверка: ') + counted.map((h) => (h.homeDown ? T('минусуют') : h.hiddenP ? T('профиль скрыт') : h.tag)).join(', '));
     // откуда проценты: если есть и автопроверка, и жалобы — сколько дало бы каждое само по себе
@@ -1003,6 +970,14 @@
     const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(getComputedStyle(node).color || '');
     return !!m && (0.299 * m[1] + 0.587 * m[2] + 0.114 * m[3]) > 140;
   }
+  // Тёмная ли страница: по фону (body/html), а если фон прозрачный — по цвету текста вокруг ника
+  function pageDark(node) {
+    for (const el of [document.body, document.documentElement]) {
+      const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?/.exec(el ? getComputedStyle(el).backgroundColor : '');
+      if (m && (m[4] === undefined || +m[4] > 0.5)) return (0.299 * m[1] + 0.587 * m[2] + 0.114 * m[3]) < 110;
+    }
+    return darkAround(node.parentElement || document.body);
+  }
   function tjIcon(dark) {
     const NS = 'http://www.w3.org/2000/svg';
     const el = (tag, attrs, parent) => {
@@ -1024,114 +999,93 @@
     t.textContent = 'TJ';
     return svg;
   }
+  // Значки у ника (1.3.96): компактно — нахрюкометр и 1–2 главные метки, остальное под «+N» (раскрывается нажатием,
+  // карточку при этом не открываем). Ник с метками — кнопка: Tab + Enter/пробел открывают карточку.
+  function badgeSpan(cls, html, title) {
+    const b = document.createElement('span');
+    b.className = 'rt-badge ' + cls;
+    b.innerHTML = html;
+    if (title) b.title = title;
+    return b;
+  }
+  const qMark = '<span class="rt-q" aria-label="?">?</span>';
+  // короткий вид автометки: значок, «?» отдельным заметным кружком, число записей
+  function hitShortHtml(h) {
+    if (h.acc) return `❗${num(h.days)}${esc(T('д'))}`;
+    if (h.kons) return '🥫' + (h.kons === 'weak' ? qMark : '');
+    if (h.homeDown) return `👎×${num(h.n)}`;
+    if (h.hiddenP) return '🙈';
+    if (h.verdict === 'debater') return `<span class="rt-glove">🥊</span>${esc(h.icon || '')}`;
+    return `${esc(h.icon || '🔍')}${h.verdict === 'unclear' ? qMark : ''}×${hitCount(h)}`;
+  }
+  function hitFullHtml(h) {
+    if (h.verdict === 'debater') return `<span class="rt-glove">🥊</span> ${esc(T('спорщик'))}${h.icon ? ' ' + esc(h.icon) : ''}`;
+    const nm = esc(hitName(h).replace(/^(\S+) /, '$1 '));
+    const cnt = h.kind || (!h.kons && !h.acc && !h.hiddenP && !h.homeDown) ? ` ×${hitCount(h)}` : h.homeDown ? ` ×${num(h.n)}` : '';
+    return (h.acc ? esc(h.tag) : nm) + (hitUnsure(h) ? qMark : '') + cnt;
+  }
   function renderBadges(wrap) {
     const k = wrap.dataset.user;
     const u = users[k];
     const st = sharedTags(k);
     wrap.textContent = '';
+    wrap.tabIndex = 0;
+    wrap.setAttribute('role', 'button');
+    wrap.setAttribute('aria-label', T('Хрюнебот: u/{u} — открыть карточку', { u: wrap.dataset.name || k }));
     // Сервисный бот (AskGrok и т.п.) — без проверок и меток, только нейтральная плашка.
     if (isServiceBot(k)) {
-      const b = document.createElement('span');
-      b.className = 'rt-badge rt-auto';
-      b.textContent = '🤖 ' + T('сервис-бот');
-      b.title = T('Сервисный бот: пишет, когда его позовут. Не проверяем.');
-      wrap.append(b);
+      wrap.append(badgeSpan('rt-auto', '🤖 ' + esc(T('сервис-бот')), T('Сервисный бот: пишет, когда его позовут. Не проверяем.')));
       return;
     }
     const score = botScore(k);
-    const tip = [u?.note, u ? statsLine(u) : '', sharedLine(k), autoLine(score.hits), konsLine(k), score.pct ? meterLine(score) : '', T('(клик — изменить)')].filter(Boolean).join('\n');
-    // «свій» и нахрюкометр ниже 10% — не показываем (в подсказке и окне ника цифра остаётся)
     const trusted = score.hits.some((h) => h.trust);
-    // Сколько меток будет у ника (без 🐽 и «свій») — от этого зависит, сворачивать ли длинные (настройка compact)
+    const tip = T('Нажмите — карточка: почему такие метки, ваши метки и заметка');
+    const items = []; // по важности: мои метки, автоматика, общие
+    for (const t of u?.tags || []) {
+      const b = badgeSpan('rt-mine', esc(st[t] ? `${t} ×${st[t]}` : t), T('Ваша метка') + '\n' + tip);
+      b.style.background = safeColor(u.color || PALETTE[0]);
+      b.style.color = textColor(u.color);
+      items.push(b);
+    }
     const autoShown = score.hits.filter((h) => !h.trust && !u?.tags?.includes(h.tag));
-    const sharedShown = Object.keys(st).filter((t) => !u?.tags?.includes(t));
-    const compact = badgesCompact(settings.compact, autoShown.length + (u?.tags?.length || 0) + sharedShown.length);
+    const sharedShown = Object.entries(st).filter(([t]) => !u?.tags?.includes(t)).sort((a, b) => b[1] - a[1]);
+    const narrow = narrowScreen();
+    const short = badgesCompact(settings.compact, autoShown.length + (u?.tags?.length || 0) + sharedShown.length, narrow);
+    for (const h of autoShown) {
+      const b = badgeSpan('rt-auto' + (h.verdict === 'debater' ? ' rt-debater' : '') + (short ? ' rt-short' : ''),
+        short ? hitShortHtml(h) : hitFullHtml(h), hitName(h) + (hitUnsure(h) ? ' ?' : '') + ' — ' + hitWhy(h) + '\n' + tip);
+      items.push(b);
+    }
+    for (const [t, c] of sharedShown) items.push(badgeSpan('rt-shared', esc(`${t} ×${c}`), T('Общая метка — доверенных пользователей: {n}', { n: c }) + '\n' + tip));
+    // «свій» — полоска сразу справа от ника (или текстовая плашка — настройка «Мітка «свій»»)
+    if (trusted) {
+      if (settings.trustStyle !== 'text') { const bar = document.createElement('span'); bar.className = 'rt-trust-bar'; bar.title = T('свой'); wrap.append(bar); }
+      else items.unshift(badgeSpan('rt-auto rt-trust', esc(T('свой')), T('свой') + '\n' + tip));
+    }
     if (score.pct && !meterHidden(score.pct, trusted)) {
-      const m = document.createElement('span');
-      m.className = 'rt-badge rt-meter';
-      m.textContent = `🐽 ${score.pct}%`;
+      const m = badgeSpan('rt-meter', `🐽 ${score.pct}%`, T('Нахрюкометр {p}% — оценка по правилам Хрюнебота, а не факт.', { p: score.pct }) + '\n' + tip);
       m.style.background = meterColor(score.pct);
       m.style.color = textColor(meterColor(score.pct));
-      m.title = tip;
       wrap.append(m);
     }
-    // Авто-метки (пунктир), если такой метки нет у меня вручную.
-    for (const h of score.hits) {
-      if (u?.tags?.includes(h.tag)) continue;
-      // «свій» — тонкая зелёная полоска сразу справа от ника (1.3.90, владелец: «чтобы глаза не мозолила»);
-      // старая текстовая плашка — настройкой trustStyle: 'text'. Полоса — первой, перед нахрюкометром.
-      if (h.trust && settings.trustStyle !== 'text') {
-        const bar = document.createElement('span');
-        bar.className = 'rt-trust-bar';
-        bar.title = T('свой');
-        wrap.prepend(bar);
-        continue;
-      }
-      const b = document.createElement('span');
-      b.className = 'rt-badge rt-auto' + (h.verdict === 'debater' ? ' rt-debater' : '') + (h.trust ? ' rt-trust' : '');
-      if (h.trust) {
-        // «свій» — зелёная текстовая плашка (1.3.83). Плашка-логотип TJ (tjIcon) зарезервирована для ветеранов
-        // оригинального TJournal — только ручная выдача модераторами (WISHLIST п.10), пока никому не показывается.
-        b.textContent = T('свой');
-      } else if (h.verdict === 'debater' && !h.acc) {
-        // Спорщик: 🥊 перекрашенная в зелёный (цвет эмодзи в разных ОС разный, фильтр — одинаковый). Без счётчика — это не нахрюки.
-        const g = document.createElement('span');
-        g.className = 'rt-glove';
-        g.textContent = '🥊';
-        // значок — где спорит (👹 / 🤡 / 👀); свёрнуто — без слова «спорщик»
-        b.append(g, compact ? (h.icon || '') : ' ' + T('спорщик') + (h.icon ? ' ' + h.icon : ''));
-      } else if (compact) {
-        // свёрнуто: значок и число, полный текст — в подсказке и окне ника
-        b.classList.add('rt-short');
-        b.textContent = h.acc ? `❗${h.days}${T('д')}`
-          : h.kons ? `🥫${h.kons === 'weak' ? '?' : ''}`
-          : h.homeDown ? `👎×${h.n}`
-          : h.hiddenP ? '🙈'
-          : h.verdict === 'unclear' ? `${h.icon || '🤷'}?×${h.n}`
-          : `${h.icon || '🔍'}×${h.n}`;
-      } else {
-        b.textContent = h.acc ? h.tag
-          : h.kons ? `🥫 ${T('консерва')}${h.kons === 'weak' ? '?' : ''}`
-          : h.homeDown ? `👎 ${T('минусуют тут')} ×${h.n}`
-          : h.hiddenP ? `🙈 ${T('профиль скрыт')}`
-          : h.verdict === 'unclear' ? `🤷 ${h.tag === 'слежу' ? T('слежу') : h.tag}? ×${h.n}`
-          : `${h.icon} ${h.tag === 'слежу' ? T('слежу') : h.tag} ×${h.n}`;
-      }
-      b.title = tip;
-      wrap.append(b);
+    const lim = badgeLimit(settings.compact, narrow);
+    const open = wrap.dataset.open === '1';
+    items.forEach((b, i) => { if (i >= lim) b.classList.add('rt-extra'); wrap.append(b); });
+    if (items.length > lim) {
+      const more = document.createElement('span');
+      more.className = 'rt-badge rt-more';
+      more.textContent = open ? '−' : `+${items.length - lim}`;
+      more.title = open ? T('Свернуть метки') : T('Показать ещё {n}', { n: items.length - lim });
+      more.setAttribute('aria-expanded', open ? 'true' : 'false');
+      wrap.append(more);
     }
-    if (u && u.tags && u.tags.length) {
-      for (const t of u.tags) {
-        const b = document.createElement('span');
-        b.className = 'rt-badge';
-        b.textContent = st[t] ? `${t} ×${st[t]}` : t;
-        b.style.background = u.color || PALETTE[0];
-        b.style.color = textColor(u.color);
-        b.title = tip;
-        wrap.append(b);
-      }
-    }
-    // Метки группы, которых нет у меня — контурные.
-    for (const [t, c] of Object.entries(st).sort((a, b) => b[1] - a[1])) {
-      if (u?.tags?.includes(t)) continue;
-      const b = document.createElement('span');
-      b.className = 'rt-badge rt-shared';
-      b.textContent = `${t} ×${c}`;
-      b.title = tip;
-      wrap.append(b);
-    }
+    wrap.classList.toggle('rt-open', open);
     if (wrap.childElementCount) return;
     if (u && u.note) {
-      const b = document.createElement('span');
-      b.className = 'rt-add rt-noted';
-      b.textContent = '📝';
-      b.title = u.note + '\n' + statsLine(u);
-      wrap.append(b);
+      wrap.append(badgeSpan('rt-add rt-noted', '📝', u.note + '\n' + tip));
     } else if (settings.showAdd) {
-      const b = document.createElement('span');
-      b.className = 'rt-add';
-      b.textContent = '🏷';
-      b.title = [T('Поставить метку'), autoLine(score.hits), konsLine(k)].filter(Boolean).join('\n');
+      const b = badgeSpan('rt-add', '🏷', T('Поставить метку') + '\n' + tip);
+      b.setAttribute('aria-hidden', 'true');
       wrap.append(b);
     }
   }
@@ -1149,6 +1103,18 @@
   }
 
   function onWrapClick(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const w = e.currentTarget;
+    if (e.target.closest && e.target.closest('.rt-more')) { // «+N» — раскрыть/свернуть метки на месте
+      w.dataset.open = w.dataset.open === '1' ? '' : '1';
+      render(w);
+      return;
+    }
+    openEditor(w);
+  }
+  function onWrapKey(e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
     e.preventDefault();
     e.stopPropagation();
     openEditor(e.currentTarget);
@@ -1203,6 +1169,7 @@
           wrap.dataset.link = ctx0.link || '';
         }
         wrap.addEventListener('click', onWrapClick, true);
+        wrap.addEventListener('keydown', onWrapKey, true);
         a.after(wrap);
         wrapOf.set(a, wrap);
         wrap.rtLink = a;
@@ -1315,11 +1282,13 @@
     if (groupOn() && group.share !== false) sent.push(api('/vote', { items: [{ user: name, tags, sub }] }));
     // В общий слой — только базовые метки (сервер свои тоже отбросит).
     if (pubOn()) sent.push(api('/vote', { items: [{ user: name, tags: tags.filter((t) => DEFAULT_PRESETS.includes(t)), sub }] }, true));
+    let sharedFail = false;
     if (sent.length) {
-      await Promise.all(sent);
+      sharedFail = (await Promise.all(sent)).some((x) => x === null);
       shared.delete(k);
       needLookup(k);
     }
+    return { sharedFail };
   }
 
   // Жалоба на пост/коммент (или «ручная», если коммента нет). undo — отозвать.
@@ -1340,14 +1309,15 @@
 
     // Отправляем в общий слой (видят все пользователи) и в свою группу, если она есть.
     const payload = { user: name, thing: c.thing, sub: c.sub, reason: c.reason, link: c.link, undo: !!undo };
-    await Promise.all([
-      groupOn() ? api('/complain', payload) : null,
-      pubOn() ? api('/complain', payload, true) : null,
+    const res = await Promise.all([
+      groupOn() ? api('/complain', payload) : undefined,
+      pubOn() ? api('/complain', payload, true) : undefined,
     ]);
     if (groupOn() || pubOn()) {
       shared.delete(k);
       needLookup(k);
     }
+    return { sharedFail: res.some((x) => x === null) };
   }
 
   // ---------- всплывающий редактор ----------
@@ -1368,161 +1338,352 @@
     else needHist(wrap.dataset.user, wrap.dataset.name, wrap.dataset.sub);
   }
 
-  // Кнопки ручной оценки вердикта для окна ника.
+  // ---------- карточка ника (1.3.96) ----------
+  // Сверху: ник, нахрюкометр и метки. Ниже — коротко человеческим языком, с источником каждой метки. Частые действия
+  // сразу (свои метки — нажатием, повторное нажатие снимает; оценка; заметка; жалоба), результат — рядом с действием.
+  // Подробные расчёты — в раскрывающемся блоке. Escape закрывает, фокус возвращается на ник.
   function reviewHtml(k) {
     const cur = reviews[k] && reviews[k].mark;
-    const btn = (m, label) => `<button class="rt-rv${cur === m ? ' rt-rv-on' : ''}" data-m="${m}">${label}</button>`;
-    return `${T('Вердикт:')} ${btn('ok', T('✔ верно'))}${btn('bad', T('✖ ошибка'))}${btn('doubt', T('? сомнительно'))}`;
+    const btn = (m, label) => `<button type="button" class="rt-rv${cur === m ? ' rt-on' : ''}" data-m="${m}" aria-pressed="${cur === m}">${label}</button>`;
+    return btn('ok', T('✔ верно')) + btn('bad', T('✖ ошибка')) + btn('doubt', T('? сомнительно'));
+  }
+  const dayOf = (ts) => (ts ? new Date(ts).toLocaleDateString(LOCALE()) : '');
+  // Состояние проверки ника: загрузка / ожидание архива или лимита / ошибка / нет данных / проверено (меток нет) / не проверяли тут
+  function checkState(k) {
+    const sv = srvVerdict(k), h = hist[k], s = shared.get(k) || {};
+    const own = h && h.v === 7 && !histQueued.has(k);
+    if (sv) return sv.stale ? { kind: 'warn', text: T('Сервер сейчас не ответил — показан результат из памяти браузера ({d})', { d: dayOf(sv.checked) }) } : { kind: 'ok', text: '' };
+    if (histNow.k === k) {
+      if (histNow.stage === 'wait') return { kind: 'wait', text: T('Жду лимит reddit — ещё {s} с. Можно закрыть карточку, проверка продолжится.', { s: Math.max(1, Math.round(((histNow.until || 0) - Date.now()) / 1000)) }) };
+      if (histNow.stage === 'arch') return { kind: 'wait', text: T('Смотрю архив ArcticShift — он бывает медленным. Можно закрыть карточку, проверка продолжится.') };
+      return { kind: 'load', text: T('Проверяю историю на reddit…') };
+    }
+    if (histQueued.has(k)) return { kind: 'load', text: T('В очереди на проверку…') };
+    if (!s.t && !own) return { kind: 'load', text: T('Загружаю…') };
+    if (own) {
+      if (!h.acc) return { kind: 'none', text: h.src === 'arch' ? T('Нет данных: ни reddit, ни архив ничего не дали (аккаунт удалён, забанен или ни разу не писал?)') : T('Нет данных: reddit не отдал профиль (скрыт, удалён или забанен?)') };
+      if (h.arch && h.arch.err) return { kind: 'warn', text: T('Архив не ответил — часть проверки повторю через 10 минут') };
+      if (s.failed) return { kind: 'warn', text: T('Сервер не ответил — показана ваша проверка ({s})', { s: h.src === 'arch' ? T('архив') : 'reddit' }) };
+      return { kind: 'ok', text: '' };
+    }
+    if (s.failed) return { kind: 'err', text: T('Сервер Хрюнебота не ответил. Проверьте интернет и нажмите «Проверить заново».') };
+    if (!autoHere(pop?.dataset.sub)) return { kind: 'none', text: T('Этого ника в базе нет. Сам Хрюнебот проверяет историю только у ников из r/{s} — здесь видны готовые результаты.', { s: (settings.autoSubs || []).join(', r/') }) };
+    return { kind: 'none', text: T('Ещё не проверяли — проверка начнётся, когда ник появится на экране') };
+  }
+  function srcLabel(h) {
+    const src = hitSource(h);
+    if (src === 'owner') return T('проверено владельцем, {d}', { d: dayOf(h.srv.checked) });
+    if (src === 'auto') return T('автопроверка Хрюнебота, {d}', { d: dayOf(h.srv.checked) });
+    return T('ваша проверка в браузере ({s})', { s: (hist[(pop && pop.dataset.user) || ''] || {}).src === 'arch' ? T('архив') : 'reddit' });
+  }
+  function headHtml(k) {
+    const u = users[k], st = sharedTags(k), sc = botScore(k);
+    const chips = [];
+    if (sc.pct) chips.push(`<span class="rt-badge rt-meter" style="background:${meterColor(sc.pct)};color:${textColor(meterColor(sc.pct))}">🐽 ${sc.pct}%</span>`);
+    for (const h of sc.hits) {
+      if (u?.tags?.includes(h.tag)) continue;
+      chips.push(h.trust ? `<span class="rt-badge rt-auto rt-trust">${esc(T('свой'))}</span>`
+        : `<span class="rt-badge rt-auto${h.verdict === 'debater' ? ' rt-debater' : ''}">${hitFullHtml(h)}</span>`);
+    }
+    for (const t of u?.tags || []) chips.push(`<span class="rt-badge rt-mine" style="background:${safeColor(u.color)};color:${textColor(u.color)}">${esc(t)}</span>`);
+    for (const [t, c] of Object.entries(st)) if (!u?.tags?.includes(t)) chips.push(`<span class="rt-badge rt-shared">${esc(t)} ×${num(c)}</span>`);
+    const meter = sc.pct ? `<div class="rt-sub">${esc(T('🐽 Нахрюкометр {p}% — оценка по правилам Хрюнебота, а не факт', { p: sc.pct }))}</div>` : '';
+    return (chips.length ? `<div class="rt-chips">${chips.join('')}</div>` : '') + meter;
+  }
+  // Главные цифры одной строкой — всегда на виду (владелец: «самое интересное»): возраст, самая долгая пауза, плюсы/минусы в TJ
+  function factsHtml(k) {
+    const sv = srvVerdict(k), h = hist[k];
+    let age = null, sleep = null, up = null, down = null;
+    if (sv && sv.ev) { age = sv.ev.age; sleep = sv.ev.sleep; up = (sv.ev.home || {}).up; down = (sv.ev.home || {}).down; }
+    else if (h && h.v === 7) {
+      if (h.acc) age = Math.floor((Date.now() - h.acc.created) / 86400000);
+      sleep = Math.round(sleepOf(h));
+      const hv = homeVotes(h.votes, settings.autoSubs || []); up = hv.up; down = hv.down;
+    }
+    const parts = [];
+    if (age != null) parts.push(T('аккаунту {a}', { a: ageStr(age) }));
+    if (sleep != null && sleep > 0) parts.push(T('самая долгая пауза {s}', { s: N(sleep, 'день|дня|дней') }));
+    if (up != null && (up || down)) parts.push(T('в TJ +{u}/−{d}', { u: up, d: down || 0 }));
+    return parts.length ? `<div class="rt-facts">📊 ${esc(parts.join(' · '))}</div>` : '';
+  }
+  function whyHtml(k) {
+    const u = users[k], st = sharedTags(k), sc = botScore(k), cs = checkState(k);
+    const line = (ico, html, src, cls = '') => `<div class="rt-line ${cls}"><span class="rt-ico" aria-hidden="true">${esc(ico)}</span><div>${html}${src ? `<div class="rt-src">${esc(src)}</div>` : ''}</div></div>`;
+    const out = [];
+    const icoOf = { load: '⏳', wait: '🕓', warn: '⚠️', err: '⚠️', none: '∅' };
+    // источник один на все автометки — пишем его один раз внизу, а не под каждой строкой
+    const autoH = sc.hits.filter((h) => !h.trust && !u?.tags?.includes(h.tag));
+    const srcs = [...new Set(autoH.map(srcLabel))];
+    const oneSrc = srcs.length === 1 && autoH.length > 1 ? srcs[0] : null;
+    if (cs.text) out.push(line(icoOf[cs.kind] || 'ℹ️', esc(cs.text), '', 'rt-state rt-' + cs.kind));
+    for (const h of sc.hits) {
+      if (u?.tags?.includes(h.tag)) continue;
+      if (h.trust) {
+        out.push(line('✅', `<b>${esc(T('свой'))}</b> — ${esc(hitWhy(h))}`, T('поэтому слабые подозрения скрыты') + ' · ' + srcLabel(sc.hits.find((x) => !x.trust) || { srv: srvVerdict(k) })));
+        if (h.hidden && h.hidden.length) out.push(line('🙈', esc(T('Скрыто, потому что свой: {h}', { h: h.hidden.map((x) => hitName(x) + (hitUnsure(x) ? '?' : '')).join(', ') })), ''));
+        continue;
+      }
+      const ico = h.verdict === 'debater' ? '🥊' : (hitName(h).split(' ')[0] || '🔍');
+      out.push(line(ico, `<b>${esc(hitName(h).replace(/^\S+ /, ''))}${hitUnsure(h) ? qMark : ''}</b> — ${esc(hitWhy(h))}`, oneSrc ? '' : srcLabel(h)));
+    }
+    if (oneSrc) out.push(`<div class="rt-src rt-src1">${esc(T('Источник меток: {s}', { s: oneSrc }))}</div>`);
+    if (u?.tags?.length) out.push(line('🏷', `<b>${esc(u.tags.join(', '))}</b>`, T('ваша метка — видите вы{p}', { p: pubOn() ? T(' и (базовые) общий слой') : '' })));
+    const shr = Object.entries(st).filter(([t]) => !u?.tags?.includes(t));
+    if (shr.length) out.push(line('👥', esc(shr.map(([t, c]) => `${t} ×${c}`).join(', ')), T('общая метка: столько доверенных её поставили')));
+    const oc = outerComp(k), mine = (u?.complaints || []).length;
+    if (oc.p || mine) out.push(line('⚠', esc(oc.p ? T('Жалобы: {p}', { p: N(oc.p, 'человек|человека|человек') }) : T('Ваша жалоба')), oc.p ? T('общий слой и группа') : T('видна вам; в общий счёт — от доверенных')));
+    if (!out.some((x) => !x.includes('rt-state')) && cs.kind === 'ok') {
+      const sv = srvVerdict(k);
+      out.push(line('✓', esc(T('Проверено — меток нет')), sv ? srcLabel({ srv: sv }) : srcLabel({}), 'rt-clean'));
+    }
+    return out.join('');
+  }
+  function detailsHtml(k) {
+    const u = users[k], sc = botScore(k);
+    const parts = [];
+    parts.push(`<div class="rt-stats rt-meterline">${esc(sc.pct ? meterLine(sc) : T('Нахрюкометр: 0% — жалоб и сработавших правил нет'))}</div>`);
+    parts.push(`<div class="rt-stats rt-checkline">${checkHtml(k)}</div>`);
+    const kl = konsLine(k); if (kl && !checkHtml(k).includes(esc(kl))) parts.push(`<div class="rt-stats">${esc(kl)}</div>`);
+    if (u) parts.push(`<div class="rt-stats">${esc(statsLine(u))}</div>`);
+    if (sharedLine(k)) parts.push(`<div class="rt-stats">${esc(sharedLine(k))}</div>`);
+    return parts.join('');
+  }
+  // Открытая карточка: обновить всё, кроме полей ввода (их не трогаем, чтобы не стереть набранное)
+  function refreshPop() {
+    if (!pop || !pop.isConnected) return;
+    const k = pop.dataset.user;
+    const set = (sel, html) => { const el = pop.querySelector(sel); if (el && el.innerHTML !== html) el.innerHTML = html; };
+    set('.rt-head', headHtml(k) + factsHtml(k));
+    set('.rt-why', whyHtml(k));
+    set('.rt-details', detailsHtml(k));
   }
 
-  function closePop() {
-    if (pop) pop.remove();
+  let detailsOpen = false;
+  try { chrome.storage.local.get('rt_ui').then((d) => { detailsOpen = !!(d.rt_ui && d.rt_ui.details); }, () => {}); } catch { /* фон недоступен */ }
+  function closePop(restore = true) {
+    if (!pop) return;
+    const w = pop.rtWrap;
+    pop.remove();
     pop = null;
+    if (restore && w && w.isConnected) { try { w.focus({ preventScroll: true }); } catch { /* ignore */ } }
   }
 
   function openEditor(wrap) {
-    closePop();
+    closePop(false);
     const k = wrap.dataset.user;
     const name = wrap.dataset.name;
     const sub = wrap.dataset.sub || null;
-    const u = users[k];
+    let u = users[k];
     let tags = [...(u?.tags || [])];
     let color = safeColor(u?.color || PALETTE[0]);
+    let savedNote = u?.note || '';
     const thing = wrap.dataset.thing || '';
-    const already = !!thing && (u?.complaints || []).some((x) => x.thing === thing);
-    const score = botScore(k);
+    let already = !!thing && (u?.complaints || []).some((x) => x.thing === thing);
 
     pop = document.createElement('div');
-    pop.className = 'rt-pop';
+    // тема — как у страницы вокруг ника (у reddit своя настройка темы, не всегда как в системе)
+    pop.className = 'rt-pop ' + (pageDark(wrap) ? 'rt-dark' : 'rt-light');
+    pop.setAttribute('role', 'dialog');
+    pop.setAttribute('aria-label', T('Хрюнебот: u/{u}', { u: name }));
     pop.dataset.user = k;
     pop.dataset.sub = sub || '';
+    pop.rtWrap = wrap;
     bumpHist(k, name, sub);
+    const sw = PALETTE.map((c) => `<button type="button" class="rt-sw" data-c="${c}" style="background:${c}" aria-label="${T('цвет')} ${c}"></button>`).join('');
     pop.innerHTML = `
       <div class="rt-pop-h">
-        <b>u/${esc(name)}</b>
-        <a class="rt-rosint" href="https://rosint.dev/?u=${encodeURIComponent(name)}" target="_blank" rel="noopener noreferrer" title="${T('История юзера в архиве rosint — откроется в новой вкладке')}">rosint ↗</a>
-        <span class="rt-x" title="${T('Закрыть')}">×</span>
+        <a class="rt-nick" href="https://www.reddit.com/user/${encodeURIComponent(name)}/" target="_blank" rel="noopener noreferrer">u/${esc(name)}</a>
+        <button type="button" class="rt-x" aria-label="${T('Закрыть')}" title="${T('Закрыть (Esc)')}">×</button>
       </div>
-      <div class="rt-cur"></div>
-      <input class="rt-in" placeholder="${T('Поиск или своя метка + Enter')}" maxlength="40">
-      <div class="rt-presets"></div>
-      <div class="rt-colors">${PALETTE.map((c) => `<span class="rt-sw" data-c="${c}" style="background:${c}"></span>`).join('')}</div>
-      <textarea class="rt-note" placeholder="${T('Заметка (за что, ссылка на коммент…)')}" rows="2">${esc(u?.note || '')}</textarea>
-      <div class="rt-stats">${esc(u ? statsLine(u) : T('Новый юзер'))}${sharedLine(k) ? '<br>' + esc(sharedLine(k)) : ''}</div>
-      <div class="rt-comp">
-        <div class="rt-meterbar"><span style="width:${score.pct}%;background:${meterColor(score.pct)}"></span></div>
-        <div class="rt-stats rt-meterline">${esc(score.pct ? meterLine(score) : T('Нахрюкометр: жалоб нет'))}</div>
-        <div class="rt-stats rt-checkline">${checkHtml(k)}</div>
-        ${autoHere(sub) ? `<a class="rt-recheck" href="#" onclick="return false">${T('🔄 проверить заново')}</a>` : ''}
-        <div class="rt-review">${reviewHtml(k)}</div>
-        <button class="rt-btn rt-complain ${already ? 'rt-undo' : ''}">${already ? T('↩ Отозвать жалобу') : thing ? T('⚠ Пожаловаться на этот коммент') : T('⚠ Пожаловаться')}</button>
+      <div class="rt-head"></div>
+      <div class="rt-why" aria-live="polite"></div>
+      <div class="rt-sec">
+        <div class="rt-h">${T('Мои метки')} <span class="rt-hint">${T('нажмите, чтобы поставить; ещё раз — снять')}</span></div>
+        <div class="rt-mytags"></div>
+        <div class="rt-row"><input class="rt-in" placeholder="${T('Своя метка')}" maxlength="40" aria-label="${T('Своя метка')}"><button type="button" class="rt-btn rt-addtag">${T('Добавить')}</button></div>
+        <div class="rt-colors" role="group" aria-label="${T('Цвет моих меток')}">${sw}</div>
+        <div class="rt-st rt-st-tags" aria-live="polite"></div>
       </div>
-      <div class="rt-actions">
-        ${u ? `<button class="rt-btn rt-del">${T('Удалить')}</button>` : '<span></span>'}
-        <button class="rt-btn rt-save">${T('Сохранить')}</button>
-      </div>`;
+      <div class="rt-sec">
+        <div class="rt-h">${T('Заметка')} <span class="rt-hint">${T('видите только вы')}</span></div>
+        <textarea class="rt-note" rows="2" placeholder="${T('За что, ссылка на коммент…')}" aria-label="${T('Заметка')}">${esc(savedNote)}</textarea>
+        <div class="rt-row"><button type="button" class="rt-btn rt-savenote">${T('Сохранить заметку')}</button><span class="rt-st rt-st-note" aria-live="polite"></span></div>
+      </div>
+      <div class="rt-sec">
+        <div class="rt-h">${T('Ваша оценка проверки')} <span class="rt-hint">${T('для себя и экспорта')}</span></div>
+        <div class="rt-review" role="group">${reviewHtml(k)}</div>
+        <div class="rt-st rt-st-rv" aria-live="polite"></div>
+      </div>
+      <div class="rt-sec">
+        <div class="rt-row"><button type="button" class="rt-btn rt-complain"></button><span class="rt-st rt-st-comp" aria-live="polite"></span></div>
+      </div>
+      <details class="rt-more-d"${detailsOpen ? ' open' : ''}>
+        <summary>${T('Подробности и расчёт')}</summary>
+        <div class="rt-details"></div>
+        <div class="rt-row rt-links">
+          ${autoHere(sub) ? `<button type="button" class="rt-link rt-recheck">${T('🔄 Проверить заново')}</button>` : ''}
+          <a class="rt-link" href="https://rosint.dev/?u=${encodeURIComponent(name)}" target="_blank" rel="noopener noreferrer">${T('История в rosint ↗')}</a>
+          <button type="button" class="rt-link rt-del">${T('Удалить всё моё про этот ник')}</button>
+        </div>
+      </details>`;
 
-    const cur = pop.querySelector('.rt-cur');
-    const presets = pop.querySelector('.rt-presets');
-    const input = pop.querySelector('.rt-in');
-
-    const draw = () => {
-      cur.innerHTML = tags.length
-        ? tags.map((t, i) => `<span class="rt-badge" style="background:${color};color:${textColor(color)}">${esc(t)} <i data-i="${i}">×</i></span>`).join('')
-        : `<span class="rt-empty">${T('меток нет')}</span>`;
-      const f = input.value.trim().toLowerCase();
-      presets.innerHTML = settings.presets
-        .filter((p) => !tags.includes(p) && (!f || p.toLowerCase().includes(f)))
-        .map((p) => `<span class="rt-chip" data-p="${esc(p)}">+ ${esc(p)}</span>`)
-        .join('');
-      pop.querySelectorAll('.rt-sw').forEach((s) => s.classList.toggle('on', s.dataset.c === color));
-    };
-
-    const addTag = (t) => {
-      t = t.trim();
-      if (t && !tags.includes(t)) tags.push(t);
-      input.value = '';
-      draw();
-    };
-    input.addEventListener('input', draw);
-
-    const doSave = async () => {
-      if (input.value.trim()) addTag(input.value);
-      const note = pop.querySelector('.rt-note').value.trim();
-      if (!tags.length && !note && !(u?.complaints || []).length) {
-        if (u) await saveUser(k, name, null);
-      } else {
-        await saveUser(k, name, { tags, color, note }, sub);
+    const $p = (s) => pop.querySelector(s);
+    $p('.rt-more-d').addEventListener('toggle', (e) => { detailsOpen = e.target.open; try { chrome.storage.local.set({ rt_ui: { details: detailsOpen } }); } catch { /* расширение перезагружено */ } });
+    const input = $p('.rt-in'), note = $p('.rt-note');
+    // результат действия — рядом с ним; ошибка — с кнопкой «Повторить», введённое не теряется
+    const status = (sel, kind, text, retry) => {
+      const el = $p(sel);
+      if (!el) return;
+      el.className = 'rt-st ' + sel.slice(1) + ' rt-' + kind;
+      el.textContent = text;
+      if (retry) {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'rt-link'; b.textContent = T('Повторить');
+        b.onclick = retry;
+        el.append(' ', b);
       }
-      closePop();
+    };
+    const drawTags = () => {
+      const all = [...new Set([...settings.presets, ...tags])];
+      $p('.rt-mytags').innerHTML = all.map((t) => {
+        const on = tags.includes(t);
+        return `<button type="button" class="rt-chip${on ? ' rt-on' : ''}" data-p="${esc(t)}" aria-pressed="${on}" ${on ? `style="background:${color};border-color:${color};color:${textColor(color)}"` : ''}>${on ? '✓ ' : '+ '}${esc(t)}</button>`;
+      }).join('');
+      pop.querySelectorAll('.rt-sw').forEach((s) => { const on = s.dataset.c === color; s.classList.toggle('rt-on', on); s.setAttribute('aria-pressed', on); });
+    };
+    const drawComplain = () => {
+      const b = $p('.rt-complain');
+      b.classList.toggle('rt-undo', already);
+      b.textContent = already ? T('↩ Отозвать жалобу') : thing ? T('⚠ Пожаловаться на этот коммент') : T('⚠ Пожаловаться');
+      b.setAttribute('aria-pressed', already);
+    };
+    // сохранить мои метки/цвет (заметка — своей кнопкой); пустую запись удаляем
+    const saveTags = async () => {
+      status('.rt-st-tags', 'busy', T('Сохраняю…'));
+      try {
+        const r = (!tags.length && !savedNote && !(users[k]?.complaints || []).length)
+          ? await saveUser(k, name, null) : await saveUser(k, name, { tags, color, note: savedNote }, sub);
+        status('.rt-st-tags', r && r.sharedFail ? 'warn' : 'ok', r && r.sharedFail
+          ? T('Сохранено у вас; общий слой не ответил — отправлю при следующей правке') : tags.length ? T('✓ Сохранено') : T('✓ Метки сняты'));
+      } catch (e) { status('.rt-st-tags', 'err', T('Не сохранилось: {e}', { e: e.message || e }), saveTags); }
+    };
+    const toggleTag = (t) => {
+      t = String(t || '').trim().slice(0, 40);
+      if (!t) return;
+      tags = tags.includes(t) ? tags.filter((x) => x !== t) : [...tags, t];
+      drawTags(); saveTags();
+    };
+    const saveNote = async () => {
+      const text = note.value.trim();
+      status('.rt-st-note', 'busy', T('Сохраняю…'));
+      try {
+        if (!tags.length && !text && !(users[k]?.complaints || []).length) await saveUser(k, name, null);
+        else await saveUser(k, name, { tags, color, note: text }, sub);
+        savedNote = text;
+        status('.rt-st-note', 'ok', text ? T('✓ Заметка сохранена') : T('✓ Заметка удалена'));
+      } catch (e) { status('.rt-st-note', 'err', T('Не сохранилось: {e}. Текст остался в поле.', { e: e.message || e }), saveNote); }
+    };
+    const doComplain = async () => {
+      const b = $p('.rt-complain');
+      b.disabled = true;
+      status('.rt-st-comp', 'busy', already ? T('Отзываю…') : T('Отправляю…'));
+      try {
+        const r = await complain(k, name, {
+          thing: thing || 'manual-' + Math.random().toString(36).slice(2, 12), // без времени — не выдаёт, когда жаловались
+          sub, link: wrap.dataset.link || null, reason: tags[0] || '',
+        }, already);
+        already = !already;
+        status('.rt-st-comp', r && r.sharedFail ? 'warn' : 'ok', r && r.sharedFail ? T('Сохранено у вас; сервер не ответил — попробуйте позже')
+          : already ? T('✓ Жалоба отправлена. Нажмите ещё раз, чтобы отозвать') : T('✓ Жалоба отозвана'));
+      } catch (e) { status('.rt-st-comp', 'err', T('Не получилось: {e}', { e: e.message || e }), doComplain); }
+      b.disabled = false;
+      drawComplain(); refreshPop();
     };
 
-    pop.addEventListener('click', async (e) => {
+    pop.addEventListener('click', (e) => {
       e.stopPropagation();
-      const t = e.target;
+      const t = e.target.closest('button, a') || e.target;
       if (t.matches('.rt-x')) closePop();
-      else if (t.matches('.rt-rv')) { // ручная оценка вердикта; повторный клик по той же — снять
+      else if (t.matches('.rt-chip')) toggleTag(t.dataset.p);
+      else if (t.matches('.rt-addtag')) { toggleTag(input.value); input.value = ''; }
+      else if (t.matches('.rt-sw')) { color = t.dataset.c; drawTags(); if (tags.length) saveTags(); }
+      else if (t.matches('.rt-savenote')) saveNote();
+      else if (t.matches('.rt-complain')) doComplain();
+      else if (t.matches('.rt-rv')) { // ручная оценка вердикта; повторное нажатие на ту же — снять
         const m = t.dataset.m;
-        if (reviews[k] && reviews[k].mark === m) delete reviews[k];
-        else reviews[k] = { mark: m, t: Date.now(), name, tags: autoHits(k).map((x) => (x.verdict === 'debater' ? 'спорщик ' : '') + x.tag + (x.verdict === 'unclear' || x.kons === 'weak' ? '?' : '')) };
-        chrome.storage.local.set({ [K_REVIEW]: reviews });
-        pop.querySelector('.rt-review').innerHTML = reviewHtml(k);
-      }
-      else if (t.matches('.rt-recheck')) { // перепроверить сейчас, не глядя на кэш
-        // заново спрашиваем сервер (только этот ник) и проверяем сами. Серверный вердикт при этом не прячем и не подменяем
-        // (1.3.88): своя проверка покажется отдельной строкой «Ваша перевірка».
+        const off = reviews[k] && reviews[k].mark === m;
+        if (off) delete reviews[k];
+        else reviews[k] = { mark: m, t: Date.now(), name, tags: autoHits(k).map((x) => (x.verdict === 'debater' ? 'спорщик ' : '') + x.tag + (hitUnsure(x) ? '?' : '')) };
+        chrome.storage.local.set({ [K_REVIEW]: reviews }).then(
+          () => status('.rt-st-rv', 'ok', off ? T('✓ Оценка снята') : T('✓ Оценка сохранена (видите только вы)')),
+          (er) => status('.rt-st-rv', 'err', T('Не сохранилось: {e}', { e: er.message || er })));
+        $p('.rt-review').innerHTML = reviewHtml(k);
+      } else if (t.matches('.rt-recheck')) { // перепроверить сейчас, не глядя на кэш; серверный вердикт не прячем (1.3.88)
         shared.delete(k);
         needLookup(k);
         forced.add(k);
         bumpHist(k, name, sub, true);
-        const el = pop.querySelector('.rt-checkline');
-        if (el) el.innerHTML = checkHtml(k);
-      }
-      else if (t.matches('.rt-cur i')) { tags.splice(+t.dataset.i, 1); draw(); }
-      else if (t.matches('.rt-chip')) addTag(t.dataset.p);
-      else if (t.matches('.rt-sw')) { color = t.dataset.c; draw(); }
-      else if (t.matches('.rt-save')) doSave();
-      else if (t.matches('.rt-complain')) {
-        t.disabled = true;
-        const reason = input.value.trim() || tags[0] || '';
-        await complain(k, name, {
-          thing: thing || 'manual-' + Math.random().toString(36).slice(2, 12), // без времени — не выдаёт, когда жаловались
-          sub,
-          link: wrap.dataset.link || null,
-          reason,
-        }, already);
-        closePop();
-      }
-      else if (t.matches('.rt-del')) {
-        if (confirm(T('Удалить u/{n} из списка?', { n: name }))) { await saveUser(k, name, null); closePop(); }
+        refreshPop();
+      } else if (t.matches('.rt-del')) {
+        if (confirm(T('Удалить u/{n} из списка?', { n: name }))) { saveUser(k, name, null).then(() => closePop()); }
       }
     });
-    // Не даём reddit перехватывать клавиши, пока печатаем.
+    // Не даём reddit перехватывать клавиши, пока печатаем; Enter в поле — добавить метку, Ctrl+Enter в заметке — сохранить
     pop.addEventListener('keydown', (e) => {
       e.stopPropagation();
-      if (e.key === 'Escape') closePop();
-      if (e.key === 'Enter' && e.target === input) { e.preventDefault(); addTag(input.value); input.value = ''; }
-      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) doSave();
+      if (e.key === 'Escape') { e.preventDefault(); closePop(); }
+      else if (e.key === 'Enter' && e.target === input) { e.preventDefault(); toggleTag(input.value); input.value = ''; }
+      else if (e.key === 'Enter' && e.target === note && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveNote(); }
     });
     ['keyup', 'keypress', 'mousedown', 'pointerdown'].forEach((ev) => pop.addEventListener(ev, (e) => e.stopPropagation()));
 
-    draw();
+    drawTags(); drawComplain();
     document.body.append(pop);
-
-    const r = wrap.getBoundingClientRect();
-    const pw = pop.offsetWidth, ph = pop.offsetHeight;
-    let top = r.bottom + 6;
-    if (top + ph > innerHeight - 8) top = Math.max(8, r.top - ph - 6);
-    pop.style.top = top + 'px';
-    pop.style.left = Math.min(Math.max(8, r.left), innerWidth - pw - 8) + 'px';
-    // На телефоне (сенсорный экран) не ставим фокус в поле: иначе сразу выскакивает клавиатура и закрывает окно.
-    if (!TOUCH) input.focus();
+    refreshPop();
+    placePop();
+    // Фокус — в карточку (с клавиатуры удобно идти Tab'ом). На телефоне в поле не ставим: иначе выскочит клавиатура.
+    try { $p('.rt-x').focus({ preventScroll: true }); } catch { /* ignore */ }
   }
+  // Положение карточки: по ВИДИМОЙ области (visualViewport — на телефоне учитывает клавиатуру). Узко — по центру.
+  function placePop() {
+    if (!pop) return;
+    const vv = window.visualViewport;
+    const vw = Math.round((vv && vv.width) || document.documentElement.clientWidth || innerWidth);
+    const vh = Math.round((vv && vv.height) || innerHeight);
+    const ox = Math.round((vv && vv.offsetLeft) || 0), oy = Math.round((vv && vv.offsetTop) || 0);
+    const narrow = TOUCH || vw < 600;
+    pop.style.width = narrow ? Math.min(400, vw - 16) + 'px' : '';
+    pop.style.maxHeight = (vh - 16) + 'px';
+    const pw = pop.offsetWidth, ph = pop.offsetHeight;
+    const w = pop.rtWrap;
+    const r = w && w.isConnected ? w.getBoundingClientRect() : { top: 8, bottom: 8, left: 8 };
+    let top = narrow ? oy + Math.max(8, Math.round((vh - ph) / 2)) : r.bottom + 6;
+    if (!narrow && top + ph > vh - 8) top = Math.max(8, r.top - ph - 6);
+    if (!narrow && top + ph > vh - 8) top = 8;
+    pop.style.top = top + 'px';
+    pop.style.left = (narrow ? ox + Math.max(8, Math.round((vw - pw) / 2)) : Math.min(Math.max(8, r.left), vw - pw - 8)) + 'px';
+  }
+  // Клавиатура на телефоне уменьшает видимую область — карточка подстраивается, поле ввода остаётся на виду
+  if (window.visualViewport) visualViewport.addEventListener('resize', () => {
+    if (!pop) return;
+    placePop();
+    const a = document.activeElement;
+    if (a && pop.contains(a) && /^(INPUT|TEXTAREA)$/.test(a.tagName)) a.scrollIntoView({ block: 'nearest' });
+  });
+  // Escape закрывает карточку, даже если фокус не в ней
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && pop) { e.stopPropagation(); closePop(); } }, true);
 
   document.addEventListener('mousedown', (e) => {
     if (pop && !pop.contains(e.target)) closePop();
   }, true);
-  addEventListener('scroll', () => { if (pop && !pop.contains(document.activeElement)) closePop(); }, { passive: true });
+  // Прокрутка страницы уводит ник из-под карточки: на компьютере закрываем (если не печатаем в ней), на телефоне — нет
+  // (там карточка по центру экрана, а прокрутку вызывает и выезжающая клавиатура).
+  addEventListener('scroll', () => {
+    if (!pop || narrowScreen()) return;
+    const a = document.activeElement;
+    if (a && pop.contains(a) && /^(INPUT|TEXTAREA)$/.test(a.tagName)) return;
+    closePop(false);
+  }, { passive: true });
 
   // ---------- запуск ----------
 
@@ -1546,6 +1707,7 @@
       document.querySelectorAll('[data-rt-seen-g]').forEach((a) => delete a.dataset.rtSeenG);
     }
     renderAll();
+    refreshPop();
     scan();
   });
 

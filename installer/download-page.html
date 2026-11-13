@@ -24,7 +24,7 @@
 <p class="lead" data-l="ru">Расширение для Reddit: метки у ников, жалобы, нахрюкометр и проверка истории пользователя.</p>
 
 <section class="card">
-  <h2>Firefox <span data-l="uk">(комп’ютер і Android)</span><span data-l="ru">(компьютер и Android)</span></h2>
+  <h2>Firefox <span data-l="uk">(Windows, Mac, Linux і Android)</span><span data-l="ru">(Windows, Mac, Linux и Android)</span></h2>
   <p data-l="uk">Підписано Mozilla, ставиться назавжди.</p>
   <p data-l="ru">Подписано Mozilla, ставится насовсем.</p>
   <a class="btn" href="files/hryunebot-firefox.xpi"><span data-l="uk">Завантажити</span><span data-l="ru">Скачать</span> .xpi</a>
@@ -54,6 +54,25 @@
     <li>«Режим разработчика» → «Загрузить распакованное» → папка, которую покажет скрипт.</li>
   </ol>
   <div class="meta">SHA-256: {{SHA_ZIP}} · <a href="https://www.virustotal.com/gui/file/{{SHA_ZIP}}" target="_blank" rel="noopener">VirusTotal</a></div>
+</section>
+<section class="card">
+  <h2>Mac</h2>
+  <p data-l="uk">Chrome, Brave, Edge, Opera, Vivaldi і Firefox. Без sudo й без інтернету. Safari не підтримується.</p>
+  <p data-l="ru">Chrome, Brave, Edge, Opera, Vivaldi и Firefox. Без sudo и без интернета. Safari не поддерживается.</p>
+  <a class="btn" href="files/Hryunebot-macOS.zip" download><span data-l="uk">Завантажити</span><span data-l="ru">Скачать</span> .zip</a>
+  <ol data-l="uk">
+    <li>Двічі клацніть по архіву — з’явиться папка <code>Hryunebot-macOS</code>.</li>
+    <li>«Термінал» (Cmd+Пробіл → «Термінал»), вставте: <code>bash ~/Downloads/Hryunebot-macOS/INSTALL.command</code> — і виберіть браузер.</li>
+    <li>«Режим розробника» → «Завантажити розпаковане» → Cmd+Shift+G, вставте шлях (він уже в буфері) → «Вибрати».</li>
+  </ol>
+  <ol data-l="ru">
+    <li>Дважды щёлкните по архиву — появится папка <code>Hryunebot-macOS</code>.</li>
+    <li>«Терминал» (Cmd+Пробел → «Терминал»), вставьте: <code>bash ~/Downloads/Hryunebot-macOS/INSTALL.command</code> — и выберите браузер.</li>
+    <li>«Режим разработчика» → «Загрузить распакованное» → Cmd+Shift+G, вставьте путь (он уже в буфере) → «Выбрать».</li>
+  </ol>
+  <p class="note" data-l="uk">Firefox на Mac — простіше: кнопка .xpi вище. Чому Термінал: подвійний клік по скриптах з інтернету macOS блокує, а запуск через bash — ні.</p>
+  <p class="note" data-l="ru">Firefox на Mac — проще: кнопка .xpi выше. Почему Терминал: двойной щелчок по скриптам из интернета macOS блокирует, а запуск через bash — нет.</p>
+  <div class="meta">SHA-256: {{SHA_MAC}} · <a href="https://www.virustotal.com/gui/file/{{SHA_MAC}}" target="_blank" rel="noopener">VirusTotal</a></div>
 </section>
 <section class="card">
   <h2>Linux</h2>
