@@ -870,7 +870,7 @@ function renderSettings() {
     ${sec('view', T('Вид и язык'), `
       <div class="row"><b>${T('Язык')}</b>${sel('langSel', LANG, [['uk', 'Українська'], ['ru', 'Русский']])}<span class="saved" data-for="langSel"></span></div>
       <div class="row">${T('Размер значков у ника')} ${sel('sizeSel', S.size || 'm', [['s', T('маленький')], ['m', T('средний')], ['l', T('большой')]])}<span class="saved" data-for="sizeSel"></span></div>
-      <div class="row">${T('Сколько меток показывать у ника')} ${sel('compactSel', S.compact || 'auto', [['auto', T('1–2 главные, остальные под «+N» (рекомендуется)')], ['always', T('1–2 главные, всегда коротко: значок и число')], ['never', T('все и полностью')]])}<span class="saved" data-for="compactSel"></span></div>
+      <div class="stack">${T('Сколько меток показывать у ника')} ${sel('compactSel', S.compact || 'auto', [['auto', T('1–2 главные, остальные под «+N» (рекомендуется)')], ['always', T('1–2 главные, всегда коротко: значок и число')], ['never', T('все и полностью')]])}<span class="saved" data-for="compactSel"></span></div>
       <div class="row">${T('Метка «свой»')} ${sel('trustStyleSel', S.trustStyle === 'text' ? 'text' : 'bar', [['bar', T('зелёная полоска')], ['text', T('текст «свой»')]])}<span class="saved" data-for="trustStyleSel"></span></div>
       ${tog('showAdd', S.showAdd, T('Показывать 🏷 у ников без меток'), T('Чтобы быстро поставить метку. Выключите — у ников без меток ничего не будет.'))}
     `)}
